@@ -84,14 +84,12 @@ def initial_values(rho, theta):
 
     基于线性化/平均场近似的场方程:
 
-    $\sigma \approx \frac{g_\sigma \rho}{m_\sigma^2},\quad
-        \rho_{03} \approx -\frac{g_\rho \rho}{2 m_\rho^2}$
+    $\sigma \approx \frac{g_\sigma \rho}{m_\sigma^2},\quad \rho_{03} \approx -\frac{g_\rho \rho}{2 m_\rho^2}$
 
     Args:
         rho (float): 重子数密度 $\rho$, 单位: fm$^{-3}$
         theta (array): RMF 模型 10 个参数
-            $[m_\sigma, m_\omega, m_\rho, g_\sigma, g_\omega, g_\rho,
-            \kappa, \lambda_0, \zeta, \Lambda_\omega]$
+            $[m_\sigma, m_\omega, m_\rho, g_\sigma, g_\omega, g_\rho, \kappa, \lambda_0, \zeta, \Lambda_\omega]$
 
     Returns:
         tuple: $(\sigma, \omega, \rho_{03}, \mu_n, \mu_e)$
@@ -211,7 +209,15 @@ def functie(x, args):
         Q_L = ((2.0 * J_B) + 1.0) * Matrix_l[i, 1] * (k_fl**3) / (6.0 * (math.pi**2))
         q_list.append(Q_L)
 
+    # ============================================================
+    # RMF 平均场自洽方程残差向量 $f_i^2$
+    # 五个方程分别对应: σ场、ω场、ρ场方程, 重子数守恒, 电荷中性
+    # ============================================================
     f = [
+        # ---------- (1) σ 标量介子场方程 ----------
+        # 方程来源: $\frac{m_\sigma^2 \sigma}{g_\sigma} = \rho_S - \kappa (g_\sigma\sigma)^2/2 - \lambda_0 (g_\sigma\sigma)^3/6$
+
+        # 其中 $\rho_S = \sum_B \bar{u}_B\gamma^0 u_B$ 为标量密度, Matrix_b[:,3] 为 σ 耦合系数
         (
             sigma * (m_sig**2) / g_sigma
             - sum(np.array(rho_SB_list) * Matrix_b[:, 3])
@@ -219,6 +225,12 @@ def functie(x, args):
             + (lambda_0 * (g_sigma * sigma) ** 3) / 6.0
         )
         ** 2,
+
+        # ---------- (2) ω 矢量介子场方程 ----------
+        # 方程来源: $\frac{m_\omega^2 \omega}{g_\omega} = \rho_B - \zeta (g_\omega\omega)^3/6 - 2\Lambda_w g_\omega\omega(g_\rho\rho_{03})^2$
+
+        # 其中 $\rho_B = \sum_B b_B k_F^3/(6\pi^2)$ 为重子数密度, Matrix_b[:,4] 为 ω 耦合系数
+        # 末项为 ω-ρ 混合项 (vector-isovector coupling)
         (
             omega * (m_w**2) / g_omega
             - sum(np.array(rho_B_list) * Matrix_b[:, 4])
@@ -226,13 +238,26 @@ def functie(x, args):
             + 2.0 * Lambda_w * g_omega * omega * (rho_03 * g_rho) ** 2
         )
         ** 2,
+
+        # ---------- (3) ρ 同位旋矢量介子场方程 ----------
+        # 方程来源: $\frac{m_\rho^2 \rho_{03}}{g_\rho} = \sum_B \rho_B I_{3B} - 2\Lambda_w g_\rho\rho_{03}(g_\omega\omega)^2$
+
+        # 其中 $I_{3B}$ 为重子同位旋第三分量 (质子 $+1/2$, 中子 $-1/2$)
+        # Matrix_b[:,5]*Matrix_b[:,2] = ρ耦合系数 × 同位旋分量
         (
             rho_03 * (m_rho**2) / g_rho
             - sum(np.array(rho_B_list) * Matrix_b[:, 5] * Matrix_b[:, 2])
             + 2.0 * Lambda_w * g_rho * rho_03 * (omega * g_omega) ** 2
         )
         ** 2,
+
+        # ---------- (4) 重子数守恒方程 ----------
+        # 要求总重子数密度 $\rho = \rho_p + \rho_n$ 与输入密度一致
         (rho - sum(rho_B_list)) ** 2,
+
+        # ---------- (5) 电荷中性条件 ----------
+
+        # $\sum_B Q_B + \sum_L Q_L = 0$, 即质子电荷与轻子电荷之和为零
         (sum(q_list)) ** 2,
     ]
 
