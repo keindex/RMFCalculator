@@ -3,55 +3,78 @@ from scipy import optimize
 import numpy as np
 import math
 
-# ==================== 物理常数与单位换算 ====================
 # 光速 $c$, 单位: cm/s
+# $$c = 2.99792458\times 10^{10} \ \mathrm{cm/s}$$
 c = 2.99792458e10
+
 # 引力常数 $G$, 单位: cm³/(g·s²)
+# $$G = 6.67428\times 10^{-8} \ \mathrm{cm^3/(g\cdot s^2)}$$
 G = 6.67428e-8
+
 # 太阳质量 $M_\odot$, 单位: g
+# $$M_\odot = 1.989\times 10^{33} \ \mathrm{g}$$
 Msun = 1.989e33
 
 # 压强单位换算: dyn/cm² → MeV/fm³
+# $$1 \ \mathrm{dyn/cm^2} = \frac{1}{1.6022\times 10^{33}} \ \mathrm{MeV/fm^3}$$
 dyncm2_to_MeVfm3 = 1.0 / (1.6022e33)
+
 # 能量密度单位换算: g/cm³ → MeV/fm³
+# $$1 \ \mathrm{g/cm^3} = \frac{1}{1.7827\times 10^{12}} \ \mathrm{MeV/fm^3}$$
 gcm3_to_MeVfm3 = 1.0 / (1.7827e12)
+
 # ħc 换算因子: $ħc \approx 197.327$ MeV·fm, 用于 fm⁻¹ ↔ MeV
+# $$\hbar c = 197.327053 \ \mathrm{MeV\cdot fm}$$
 oneoverfm_MeV = 197.327053
 
 # ==================== 粒子质量 (自然单位: fm⁻¹) ====================
 # 电子质量 $m_e \approx 0.511$ MeV → fm⁻¹
+# $$m_e = 0.511 \ \mathrm{MeV} \times \frac{1}{197.327} \ \mathrm{fm^{-1}} = 2.5896\times 10^{-3} \ \mathrm{fm^{-1}}$$
 m_e = 2.5896041 * 10**-3
+
 # μ 子质量 $m_\mu \approx 105.66$ MeV → fm⁻¹
+# $$m_\mu = 105.66 \ \mathrm{MeV} \times \frac{1}{197.327} \ \mathrm{fm^{-1}} = 0.5354 \ \mathrm{fm^{-1}}$$
 m_mu = 0.5354479981
+
 # 中子质量 $m_n \approx 938.92$ MeV → fm⁻¹
+# $$m_n = 938.92 \ \mathrm{MeV} \times \frac{1}{197.327} \ \mathrm{fm^{-1}} = 4.7584 \ \mathrm{fm^{-1}}$$
 m_n = 4.7583690772
+
 # 质子质量 $m_p$ (RMF 中通常取 $m_p = m_n$)
+# $$m_p \approx m_n = 4.7584 \ \mathrm{fm^{-1}}$$
 m_p = 4.7583690772
 
 # 核子自旋 $J_B = 1/2$, 简并度因子 $(2J_B+1) = 2$
+# $$(2J_B + 1) = 2\times\frac{1}{2} + 1 = 2$$
 J_B = 1 / 2.0
+
 # 重子数 $b_B = 1$ (核子)
 b_B = 1
 
 # 轻子质量列表: $[m_e, m_\mu]$
 m_l = [m_e, m_mu]
+
 # 核子质量列表: $[m_p, m_n]$
 m_b = [m_p, m_n]
 
 # 重子量子数矩阵 Matrix_b[i]: 行 i=0 为质子, i=1 为中子
 # 列含义: [重子数 $b$, 电荷 $q$, 同位旋第三分量 $I_3$, σ耦合, ω耦合, ρ耦合]
 # 质子: $b=1, q=+1, I_3=+1/2$; 中子: $b=1, q=0, I_3=-1/2$
+
+# $$\mathrm{Matrix\_b} = \begin{pmatrix} 1 & 1 & +1/2  \\ 1 & 0 & -1/2  \end{pmatrix}$$
 Matrix_b = np.array(
-    [[1.0, 1.0, 1 / 2.0, 1.0, 1.0, 1.0], [1.0, 0.0, -1 / 2.0, 1.0, 1.0, 1.0]]
+    [[1.0, 1.0, 1 / 2.0], [1.0, 0.0, -1 / 2.0]]
 )
 
 # 轻子量子数矩阵 Matrix_l[j]: 行 j=0 为电子, j=1 为 μ 子
 # 列含义: [重子数 $b=0$, 电荷 $q=-1$, 自旋 $J=1/2$]
+
+# $$\mathrm{Matrix\_l} = \begin{pmatrix} 0 & -1 & 1/2 \\ 0 & -1 & 1/2 \end{pmatrix}$$
 Matrix_l = np.array([[0.0, -1.0, 1 / 2.0], [0.0, -1.0, 1 / 2.0]])
 
 
 def _validate_rmf_theta(theta):
-    """
+    r"""
     校验并返回长度为 10 的数值型 RMF 参数向量 $\theta$。
 
     $\theta = [m_\sigma, m_\omega, m_\rho, g_\sigma, g_\omega, g_\rho,\kappa, \lambda_0, \zeta, \Lambda_\omega]$
@@ -158,7 +181,7 @@ def functie(x, args):
     m_b = np.array([m_p, m_n])
 
     Matrix_b = np.array(
-        [[1.0, 1.0, 1 / 2.0, 1.0, 1.0, 1.0], [1.0, 0.0, -1 / 2.0, 1.0, 1.0, 1.0]]
+        [[1.0, 1.0, 1 / 2.0], [1.0, 0.0, -1 / 2.0]]
     )
 
     Matrix_l = np.array([[0.0, -1.0, 1 / 2.0], [0.0, -1.0, 1 / 2.0]])
@@ -175,11 +198,28 @@ def functie(x, args):
 
     m_eff = m_n - (g_sigma * sigma)
 
+    # -------- 重子部分 (质子 i=0, 中子 i=1) --------
+
+    # 化学势: $\mu_b = b\mu_n - q\mu_e$ (b=1 for baryons)
+
+    # 费米能量: $E_{fb} = \mu_b - g_\omega\omega - g_\rho\rho_{03}I_{3b}$
+
+    # 费米动量: $k_{Fb} = \sqrt{E_{fb}^2 - m^{*2}}$
+
+    # 重子数密度: $\rho_B = \frac{(2J_B+1)b_B k_{Fb}^3}{6\pi^2}$
+
+    # 标量密度: $\rho_{SB} = \frac{m^*}{2\pi^2}[E_{Fb}k_{Fb} - m^{*2}\ln\frac{E_{Fb}+k_{Fb}}{m^*}]$
+
+    # 电荷密度: $Q_B = \frac{(2J_B+1)q_B k_{Fb}^3}{6\pi^2}$
+
     for i in range(len(Matrix_b)):
+        # 化学势计算: $\mu_b = \mu_n - q\mu_e$ (重子数 b=1)
         mu_b = Matrix_b[i, 0] * mu_n - Matrix_b[i, 1] * mu_e
 
+        # 费米能量 (含介子场耦合)
         E_fb = mu_b - g_omega * omega - g_rho * rho_03 * Matrix_b[i, 2]
 
+        # 费米动量平方: $k_{Fb}^2 = E_{fb}^2 - m^{*2}$
         k_fb_sq = E_fb**2 - m_eff**2
         if k_fb_sq < 0:
             k_fb_sq = np.clip(k_fb_sq, a_min=0.0, a_max=None)
@@ -187,7 +227,12 @@ def functie(x, args):
 
         k_fb = math.sqrt(k_fb_sq)
 
+        # 重子数密度: $\rho_B = \frac{2 k_{Fb}^3}{6\pi^2} = \frac{k_{Fb}^3}{3\pi^2}$
+
         rho_B = ((2 * J_B) + 1) * b_B * k_fb**3 / (6.0 * math.pi**2)
+
+        # 标量密度: $\rho_{SB} = \frac{m^*}{2\pi^2}[E_{Fb}k_{Fb} - m^{*2}\ln\frac{E_{Fb}+k_{Fb}}{m^*}]$
+
         rho_SB = (m_eff / (2.0 * math.pi**2)) * (
             E_fb * k_fb - (m_eff ** (2)) * np.log((E_fb + k_fb) / m_eff)
         )
@@ -195,84 +240,151 @@ def functie(x, args):
         rho_B_list.append(rho_B)
         rho_SB_list.append(rho_SB)
 
+        # 电荷密度: $Q_B = \frac{2 q_B k_{Fb}^3}{6\pi^2}$
+        
         Q_B = ((2.0 * J_B) + 1.0) * Matrix_b[i, 1] * k_fb**3 / (6.0 * math.pi**2)
         q_list.append(Q_B)
 
+    # -------- 轻子部分 (电子 j=0, μ子 j=1) --------
+
+    # 化学势: $\mu_l = \mu_n - \mu_e$
+
+    # 费米动量: $k_{Fl} = \sqrt{\mu_l^2 - m_l^2}$
+
+    # 电荷密度: $Q_L = \frac{2 q_L k_{Fl}^3}{6\pi^2}$ (q_L = -1)
+
     for j in range(len(Matrix_l)):
-        mu_l = Matrix_l[j, 0] * mu_n - Matrix_l[i, 1] * mu_e
+        mu_l = Matrix_l[j, 0] * mu_n - Matrix_l[j, 1] * mu_e
         E_fl = mu_l
 
         k_fl_sq = E_fl**2 - m_l[j] ** 2
         k_fl_sq = np.clip(k_fl_sq, a_min=0.0, a_max=None)
         k_fl = math.sqrt(k_fl_sq)
 
-        Q_L = ((2.0 * J_B) + 1.0) * Matrix_l[i, 1] * (k_fl**3) / (6.0 * (math.pi**2))
+        # 轻子电荷密度: $Q_L = -\frac{k_{Fl}^3}{3\pi^2}$
+        
+        Q_L = ((2.0 * J_B) + 1.0) * Matrix_l[j, 1] * (k_fl**3) / (6.0 * (math.pi**2))
         q_list.append(Q_L)
 
     # ============================================================
+
     # RMF 平均场自洽方程残差向量 $f_i^2$
+
     # 五个方程分别对应: σ场、ω场、ρ场方程, 重子数守恒, 电荷中性
+
     # ============================================================
     f = [
         # ---------- (1) σ 标量介子场方程 ----------
-        # 方程来源: $\frac{m_\sigma^2 \sigma}{g_\sigma} = \rho_S - \kappa (g_\sigma\sigma)^2/2 - \lambda_0 (g_\sigma\sigma)^3/6$
 
-        # 其中 $\rho_S = \sum_B \bar{u}_B\gamma^0 u_B$ 为标量密度, Matrix_b[:,3] 为 σ 耦合系数
+        # 方程来源:
+
+        # $$\frac{m_\sigma^2 \sigma}{g_\sigma} = \rho_S - \frac{\kappa}{2}(g_\sigma\sigma)^2 - \frac{\lambda_0}{6}(g_\sigma\sigma)^3$$
+
+        # 其中 $\rho_S = \sum_B \bar{u}_B\gamma^0 u_B = \sum_B \rho_{SB}$ 为标量密度
+
         (
             sigma * (m_sig**2) / g_sigma
-            - sum(np.array(rho_SB_list) * Matrix_b[:, 3])
+            - sum(np.array(rho_SB_list))
             + (kappa * (g_sigma * sigma) ** 2) / 2.0
             + (lambda_0 * (g_sigma * sigma) ** 3) / 6.0
         )
         ** 2,
 
         # ---------- (2) ω 矢量介子场方程 ----------
-        # 方程来源: $\frac{m_\omega^2 \omega}{g_\omega} = \rho_B - \zeta (g_\omega\omega)^3/6 - 2\Lambda_w g_\omega\omega(g_\rho\rho_{03})^2$
 
-        # 其中 $\rho_B = \sum_B b_B k_F^3/(6\pi^2)$ 为重子数密度, Matrix_b[:,4] 为 ω 耦合系数
-        # 末项为 ω-ρ 混合项 (vector-isovector coupling)
+        # 方程来源:
+
+        # $$\frac{m_\omega^2 \omega}{g_\omega} = \rho_B - \frac{\zeta}{6}(g_\omega\omega)^3 - 2\Lambda_\omega g_\omega\omega(g_\rho\rho_{03})^2$$
+
+        # 其中 $\rho_B = \sum_B b_B k_{Fb}^3/(6\pi^2)$ 为重子数密度
+
+
+        # 末项 $-\Lambda_\omega g_\omega g_\rho^2 \omega \rho_{03}^2$ 为 ω-ρ 混合项
         (
             omega * (m_w**2) / g_omega
-            - sum(np.array(rho_B_list) * Matrix_b[:, 4])
+            - sum(np.array(rho_B_list) )
             + (zeta * (g_omega * omega) ** 3) / 6.0
             + 2.0 * Lambda_w * g_omega * omega * (rho_03 * g_rho) ** 2
         )
         ** 2,
 
         # ---------- (3) ρ 同位旋矢量介子场方程 ----------
-        # 方程来源: $\frac{m_\rho^2 \rho_{03}}{g_\rho} = \sum_B \rho_B I_{3B} - 2\Lambda_w g_\rho\rho_{03}(g_\omega\omega)^2$
+
+        # 方程来源:
+
+        # $$\frac{m_\rho^2 \rho_{03}}{g_\rho} = \sum_B \rho_B I_{3B} - 2\Lambda_\omega g_\rho\rho_{03}(g_\omega\omega)^2$$
 
         # 其中 $I_{3B}$ 为重子同位旋第三分量 (质子 $+1/2$, 中子 $-1/2$)
-        # Matrix_b[:,5]*Matrix_b[:,2] = ρ耦合系数 × 同位旋分量
+
         (
             rho_03 * (m_rho**2) / g_rho
-            - sum(np.array(rho_B_list) * Matrix_b[:, 5] * Matrix_b[:, 2])
+            - sum(np.array(rho_B_list) * Matrix_b[:, 2])
             + 2.0 * Lambda_w * g_rho * rho_03 * (omega * g_omega) ** 2
         )
         ** 2,
 
         # ---------- (4) 重子数守恒方程 ----------
-        # 要求总重子数密度 $\rho = \rho_p + \rho_n$ 与输入密度一致
+
+        # 方程来源:
+
+        # $$\rho = \sum_B \rho_B = \rho_p + \rho_n$$
+
+        # 要求总重子数密度与输入密度一致
         (rho - sum(rho_B_list)) ** 2,
 
         # ---------- (5) 电荷中性条件 ----------
 
-        # $\sum_B Q_B + \sum_L Q_L = 0$, 即质子电荷与轻子电荷之和为零
+        # 方程来源:
+
+        # $$\sum_B Q_B + \sum_L Q_L = 0$$
+
+        # 即 $\rho_{Bp}q_p + \rho_{Bn}q_n + \rho_{Le}q_e + \rho_{L\mu}q_\mu = 0$
         (sum(q_list)) ** 2,
     ]
 
     return f
 
 
-def Energy_density_Pressure(x, rho, theta, return_tag=False):
+def Energy_density_Pressure(x, rho, theta):
     r"""
     计算 RMF 模型的状态方程 (能量密度和压强)。
+
+    ---
+    **重子能量密度:**
+
+    单核子能量积分 (费米气体模型):
+
+    $\varepsilon_b = \frac{1}{8\pi^2}\left[k_F(E_F^3 + k_F^3) - m^{*4}\ln\frac{k_F+E_F}{m^*}\right]$
+
+    其中 $k_F$ 为费米动量, $E_F = \sqrt{k_F^2 + m^{*2}}$ 为费米能量。
+
+    ---
+    **轻子能量密度:**
+
+    $\varepsilon_l = \frac{1}{8\pi^2}\left[k_l\mu_l^3 + k_l^3\mu_l - m_l^4\ln\frac{k_l+\mu_l}{m_l}\right]$
+
+    ---
+    **介子场能量项:**
+
+    $\varepsilon_\sigma = \frac{1}{2}m_\sigma^2\sigma^2 + \frac{\kappa}{6}(g_\sigma\sigma)^3 + \frac{\lambda_0}{24}(g_\sigma\sigma)^4$
+
+    $\varepsilon_\omega = \frac{1}{2}m_\omega^2\omega^2 + \frac{\zeta}{8}(g_\omega\omega)^4$
+
+    $\varepsilon_\rho = \frac{1}{2}m_\rho^2\rho_{03}^2 + 3\Lambda_\omega(g_\rho g_\omega \omega\rho_{03})^2$
+
+    ---
+    **总能量密度与压强:**
+
+    $\varepsilon = \varepsilon_b + \varepsilon_l + \varepsilon_\sigma + \varepsilon_\omega + \varepsilon_\rho$
+
+    $P = \sum_f \mu_f \rho_f - \varepsilon$
+
+    其中 $\sum_f \mu_f \rho_f$ 为化学势与粒子数密度之积的总和 (包括重子和轻子)。
 
     Args:
         x (array): $[\sigma, \omega, \rho_{03}, \mu_n, \mu_e]$
         rho (float): 重子数密度 $\rho$, 单位: fm$^{-3}$
         theta (array): 长度 10 的数值型 RMF 参数向量
-        return_tag (bool, optional): 是否返回完整组成信息
 
     Returns:
         tuple 或 list: (能量密度, 压强) 或完整 EOS 组成
@@ -300,13 +412,25 @@ def Energy_density_Pressure(x, rho, theta, return_tag=False):
 
     m_eff = m_n - (g_sigma * sigma)
 
+    # -------- 重子能量计算 --------
+
+    # 化学势关系: $\mu_b = \mu_n - q\mu_e$ (重子数 b=1)
+
+    # 费米能量: $E_{fb} = \mu_b - g_\omega\omega - g_\rho\rho_{03}I_{3b}$
+
+    # 动能项: $\varepsilon_b = \frac{1}{8\pi^2}[k_F(E_F^3 + k_F^3) - m^{*4}\ln\frac{k_F+E_F}{m^*}]$
+
+    # 化学势×密度项: $\mu_b \rho_B$ 用于压强计算
     for i in range(len(Matrix_b)):
+        # 化学势: $\mu_p = \mu_n - \mu_e$, $\mu_n = \mu_n$
         mu_b = Matrix_b[i, 0] * mu_n - Matrix_b[i, 1] * mu_e
 
         Composition[i] = mu_b
 
+        # 费米能量: $E_{fb} = \mu_b - g_\omega\omega - g_\rho\rho_{03}I_{3b}$
         E_fb = mu_b - g_omega * omega - g_rho * rho_03 * Matrix_b[i, 2]
 
+        # 费米动量: $k_{Fb} = \sqrt{E_{fb}^2 - m^{*2}}$
         k_fb_sq = E_fb**2 - m_eff**2
         if k_fb_sq < 0:
             k_fb_sq = 0.0
@@ -314,12 +438,20 @@ def Energy_density_Pressure(x, rho, theta, return_tag=False):
 
         k_fb = math.sqrt(k_fb_sq)
 
+        # 重子数密度: $\rho_B = \frac{2k_{Fb}^3}{6\pi^2} = \frac{k_{Fb}^3}{3\pi^2}$
         rho_B = ((2.0 * J_B) + 1.0) * b_B * (k_fb**3) / (6.0 * math.pi**2)
 
         if i == 0:
+            # 质子分数: $x_p = \rho_p / \rho$
             Composition[4] = rho_B / rho
 
+        # $\mu_b \rho_B$ 项, 贡献于压强: $P = \sum \mu_f \rho_f - \varepsilon$
         multi = multi + mu_b * rho_B
+
+        # 重子能量密度 (费米气体积分):
+
+        # $\varepsilon_b = \frac{1}{8\pi^2}[k_F(E_F^3 + k_F^3) - m^{*4}\ln\frac{k_F+E_F}{m^*}]$
+
         energy_baryon = (1 / (8.0 * (math.pi**2))) * (
             k_fb * (E_fb**3)
             + (k_fb**3) * E_fb
@@ -328,8 +460,16 @@ def Energy_density_Pressure(x, rho, theta, return_tag=False):
 
         energy_b = energy_b + energy_baryon
 
+    # -------- 轻子能量计算 --------
+
+    # 轻子化学势: $\mu_l = \mu_n - \mu_e$ (电荷 q=-1)
+
+    # 轻子数密度: $\rho_l = \frac{k_{Fl}^3}{3\pi^2}$
+
+    # 轻子能量密度: $\varepsilon_l = \frac{1}{8\pi^2}[k_l\mu_l^3 + k_l^3\mu_l - m_l^4\ln\frac{k_l+\mu_l}{m_l}]$
+
     for j in range(len(Matrix_l)):
-        mu_l = Matrix_l[i, 0] * mu_n - Matrix_l[j, 1] * mu_e
+        mu_l = Matrix_l[j, 0] * mu_n - Matrix_l[j, 1] * mu_e
 
         Composition[2 + j] = mu_l
 
@@ -338,9 +478,17 @@ def Energy_density_Pressure(x, rho, theta, return_tag=False):
             k_fl_sq = 0.0
         k_fl = math.sqrt(k_fl_sq)
 
+        # 轻子数密度: $\rho_l = \frac{k_{Fl}^3}{3\pi^2}$
+
         rho_l = k_fl**3 / (3.0 * math.pi**2)
 
+        # $\mu_l \rho_l$ 项, 贡献于压强
         multi = multi + mu_l * rho_l
+
+        # 轻子能量密度:
+
+        # $\varepsilon_l = \frac{1}{8\pi^2}[k_l\mu_l^3 + k_l^3\mu_l - m_l^4\ln\frac{k_l+\mu_l}{m_l}]$
+
         energy_lepton = (1 / (8.0 * (math.pi**2))) * (
             k_fl * (mu_l**3)
             + mu_l * (k_fl**3)
@@ -349,41 +497,84 @@ def Energy_density_Pressure(x, rho, theta, return_tag=False):
 
         energy_l = energy_l + energy_lepton
 
+    # -------- 介子场能量项 --------
+
+    # σ 场能量:
+
+    # $\varepsilon_\sigma = \frac{1}{2}m_\sigma^2\sigma^2 + \frac{\kappa}{6}(g_\sigma\sigma)^3 + \frac{\lambda_0}{24}(g_\sigma\sigma)^4$
     sigma_terms = (
         0.5 * ((sigma * m_sig) ** 2)
         + (kappa * ((g_sigma * sigma) ** 3)) / 6.0
         + (lambda_0 * ((g_sigma * sigma) ** 4)) / 24.0
     )
 
+    # ω 场能量:
+
+    # $\varepsilon_\omega = \frac{1}{2}m_\omega^2\omega^2 + \frac{\zeta}{8}(g_\omega\omega)^4$
+
     omega_terms = 0.5 * ((omega * m_w) ** 2) + (zeta * ((g_omega * omega) ** 4)) / 8.0
 
-    rho_terms = 0.5 * ((rho_03 * m_rho) ** 2) + +3.0 * Lambda_w * (
+    # ρ 场能量 (含 ω-ρ 混合项):
+
+    # $\varepsilon_\rho = \frac{1}{2}m_\rho^2\rho_{03}^2 + 3\Lambda_\omega(g_\rho g_\omega \omega\rho_{03})^2$
+    
+    rho_terms = 0.5 * ((rho_03 * m_rho) ** 2) + 3.0 * Lambda_w * (
         (g_rho * rho_03 * g_omega * omega) ** 2
     )
 
+    # -------- 总能量密度与压强 --------
+
+    # 总能量密度: $\varepsilon = \varepsilon_b + \varepsilon_l + \varepsilon_\sigma + \varepsilon_\omega + \varepsilon_\rho$
+
     energy_density = energy_b + energy_l + sigma_terms + omega_terms + rho_terms
+
+    # 压强: $P = \sum_f \mu_f \rho_f - \varepsilon$
+
+    # 其中 $\sum_f \mu_f \rho_f = \sum_B \mu_B\rho_B + \sum_L \mu_L\rho_L$
 
     Pressure = multi - energy_density
 
-    if return_tag:
-        EoS = [rho, energy_density, Pressure] + Composition
-        return EoS
-    else:
-        return energy_density, Pressure
+    EoS = [rho, energy_density, Pressure] + Composition
+    return EoS
 
 
-def compute_EOS(eps_crust, pres_crust, theta, return_tag=False):
+def compute_EOS(eps_crust, pres_crust, theta):
     r"""
     由 RMF 参数向量生成中子星内核状态方程, 并与壳层 EOS 拼接。
+
+    ---
+    **计算流程:**
+
+    (1) 在饱和密度 $\rho_0 = 0.1505$ fm$^{-3}$ 附近取 124 个密度点:
+
+    $\rho_i = i \cdot \Delta t \cdot \rho_0, \quad i = 1, 2, \ldots, 124$
+
+    其中 $\Delta t = 0.05$。
+
+    (2) 对每个密度点, 通过求解自洽方程获得介子场与化学势。
+
+    (3) 计算能量密度与压强:
+
+    $\varepsilon = \varepsilon_\mathrm{baryon} + \varepsilon_\mathrm{lepton} + \varepsilon_\mathrm{meson}$
+
+    $P = \sum_f \mu_f \rho_f - \varepsilon$
+
+    (4) 单位换算: MeV/fm³ → g/cm³, dyn/cm²:
+
+    $\varepsilon [\mathrm{g/cm^3}] = \varepsilon [\mathrm{MeV/fm^3}] \times \frac{\hbar c}{1.7827\times 10^{12}}$
+
+    $P [\mathrm{dyn/cm^2}] = P [\mathrm{MeV/fm^3}] \times \frac{\hbar c}{1.6022\times 10^{33}}$
+
+    (5) 与壳层 EOS 拼接: 只保留能量密度高于壳层最大值的内核部分。
 
     Args:
         eps_crust (array): 壳层能量密度, 单位: g·cm$^{-3}$
         pres_crust (array): 壳层压强, 单位: dyn·cm$^{-2}$
         theta (array): 长度 10 的数值型 RMF 参数向量
-        return_tag (bool, optional): 是否同时返回化学势与质子分数
+            $[m_\sigma, m_\omega, m_\rho, g_\sigma, g_\omega, g_\rho, \kappa, \lambda_0, \zeta, \Lambda_\omega]$
 
     Returns:
-        tuple 或 ndarray: (能量密度, 压强) 数组, 单位 g·cm$^{-3}$ / dyn·cm$^{-2}$
+        ndarray: (能量密度, 压强) 数组, 单位 g·cm$^{-3}$ / dyn·cm$^{-2}$
     """
     theta = _validate_rmf_theta(theta)
     dt = 0.05
@@ -391,11 +582,8 @@ def compute_EOS(eps_crust, pres_crust, theta, return_tag=False):
 
     x_init = np.array(initial_values(0.1 * rho_0, theta))
 
-    if return_tag:
-        EoS = [[] for i in range(124)]
-    else:
-        Energy = []
-        Pressure = []
+    EoS = [[] for i in range(124)]
+
 
     for i in range(1, 125):
         rho = i * dt * rho_0
@@ -403,47 +591,25 @@ def compute_EOS(eps_crust, pres_crust, theta, return_tag=False):
         arg = np.append(theta, rho)
         sol = optimize.root(functie, x_init, method="lm", args=arg)
 
-        Re = Energy_density_Pressure(x_init, rho, theta, return_tag)
+        Re = Energy_density_Pressure(sol.x, rho, theta)
 
-        if return_tag:
-            Re[1] = Re[1] * oneoverfm_MeV / gcm3_to_MeVfm3
-            Re[2] = Re[2] * oneoverfm_MeV / dyncm2_to_MeVfm3
+        Re[1] = Re[1] * oneoverfm_MeV / gcm3_to_MeVfm3
+        Re[2] = Re[2] * oneoverfm_MeV / dyncm2_to_MeVfm3
 
-            EoS[i - 1] = Re
-        else:
-            Energy.append(Re[0] * oneoverfm_MeV / gcm3_to_MeVfm3)
-            Pressure.append(Re[1] * oneoverfm_MeV / dyncm2_to_MeVfm3)
+        EoS[i - 1] = Re
 
         x_init = sol.x
 
-    if return_tag:
-        EoS = np.array(EoS)
+    EoS = np.array(EoS)
 
-        end = 0
-        for i in range(0, len(EoS) - 1):
-            if EoS[i][1] > max(eps_crust / g_cm_3) and i > 18:
-                end = i + 2
-                break
-            end += 1
-        EoS = EoS[end::].T
-        EoS[1] = EoS[1] * g_cm_3
-        EoS[2] = EoS[2] * dyn_cm_2
+    end = 0
+    for i in range(0, len(EoS) - 1):
+        if EoS[i][1] > max(eps_crust / g_cm_3) and i > 18:
+            end = i + 2
+            break
+        end += 1
+    EoS = EoS[end::].T
+    EoS[1] = EoS[1] * g_cm_3
+    EoS[2] = EoS[2] * dyn_cm_2
 
-        return EoS
-    else:
-        Energy = np.array(Energy)
-        Pressure = np.array(Pressure)
-
-        end = 0
-        for i in range(0, len(Energy) - 1):
-            if Energy[i] > max(eps_crust / g_cm_3) and i > 18:
-                end = i + 2
-                break
-            end += 1
-        ep = Energy[end::]
-        pr = Pressure[end::]
-
-        ep = ep * g_cm_3
-        pr = pr * dyn_cm_2
-
-        return ep, pr
+    return EoS

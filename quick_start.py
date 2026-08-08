@@ -1,10 +1,12 @@
+import math
+
 import numpy as np
 from RMFCalculator.eos import compute_EOS, PolyInterpolate
 from RMFCalculator.tov import OutputMR
 from RMFCalculator.tov.unit import g_cm_3, dyn_cm_2, km, Msun, MeV, fm
 
 # 加载真实的壳层 EOS
-Tolos_crust = np.loadtxt(r'd:\dev\CompactObject\Test_Case\Tolos_crust_out.txt')
+Tolos_crust = np.loadtxt(r'Tolos_crust_out.txt')
 eps_crust_T = Tolos_crust[:, 3] * g_cm_3
 pres_crust_T = Tolos_crust[:, 4] * dyn_cm_2
 eps_com, pres_com = PolyInterpolate(eps_crust_T, pres_crust_T)
@@ -15,14 +17,15 @@ FSU_params = {
     'm_sigma': 491.5 * MeV_to_fm,
     'm_omega': 782.5 * MeV_to_fm,
     'm_rho': 763.0 * MeV_to_fm,
-    'g_sigma': 10.217,
-    'g_omega': 13.584,
-    'g_rho': 8.919,
-    'kappa': 1.950e-4,
-    'lambda_0': 5.651e-3,
-    'zeta': 3.483e-3,
-    'Lambda_w': 1.864e-2,
+    'g_sigma': math.sqrt(107.5751),
+    'g_omega': math.sqrt(204.5469),
+    'g_rho': math.sqrt(138.4701),
+    'kappa': 1.4203 * MeV_to_fm,
+    'lambda_0': 0.023762,
+    'zeta':  0.06,
+    'Lambda_w':  0.03,
 }
+
 
 theta = np.array([
     FSU_params['m_sigma'], FSU_params['m_omega'], FSU_params['m_rho'],
@@ -31,7 +34,8 @@ theta = np.array([
 ])
 
 # 计算 EOS
-eps_kernel, pres_kernel = compute_EOS(eps_com, pres_com, theta)
+x = compute_EOS(eps_com, pres_com, theta)
+eps_kernel, pres_kernel = x[1], x[2]
 print(f'EOS 计算完成: {len(eps_kernel)} 个点')
 
 # 连接壳层和内核
