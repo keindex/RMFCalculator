@@ -10,4 +10,4 @@ m_w = 3.96544
 m_rho = 3.86662
 dyncm2_to_MeVfm3 = 1.0 / (1.6022e33)
 gcm3_to_MeVfm3 = 1.0 / (1.7827e12)
-oneoverfm_MeV = 197.33
+fm_MeV = 197.33

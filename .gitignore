@@ -121,3 +121,8 @@ Thumbs.db
 # Project specific
 RMFCalculator.egg-info/
 thesis
+
+.agents
+
+skills-lock.json
+.thesis

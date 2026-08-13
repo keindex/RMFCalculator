@@ -493,8 +493,8 @@ def compute_EOS(eps_crust, pres_crust, theta):
 
         Re = Energy_density_Pressure(sol.x, rho, theta)
 
-        Re[1] = Re[1] * oneoverfm_MeV / gcm3_to_MeVfm3
-        Re[2] = Re[2] * oneoverfm_MeV / dyncm2_to_MeVfm3
+        Re[1] = Re[1] * fm_MeV / gcm3_to_MeVfm3
+        Re[2] = Re[2] * fm_MeV / dyncm2_to_MeVfm3
 
         EoS[i - 1] = Re
 

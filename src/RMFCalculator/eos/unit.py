@@ -1,5 +1,8 @@
 # 光速 $c$, 单位: cm/s
 # $$c = 2.99792458\times 10^{10} \ \mathrm{cm/s}$$
+import numpy as np
+
+
 c = 2.99792458e10
 
 # 引力常数 $G$, 单位: cm³/(g·s²)
@@ -20,7 +23,7 @@ gcm3_to_MeVfm3 = 1.0 / (1.7827e12)
 
 # ħc 换算因子: $ħc \approx 197.327$ MeV·fm, 用于 fm⁻¹ ↔ MeV
 # $$\hbar c = 197.327053 \ \mathrm{MeV\cdot fm}$$
-oneoverfm_MeV = 197.327053
+fm_MeV = 197.327053
 
 # ==================== 粒子质量 (自然单位: fm⁻¹) ====================
 # 电子质量 $m_e \approx 0.511$ MeV → fm⁻¹

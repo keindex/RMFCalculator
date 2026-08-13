@@ -1,9 +1,7 @@
-import math
-
 import numpy as np
-from RMFCalculator.eos import compute_EOS, PolyInterpolate
+from RMFCalculator.eos import compute_EOS, PolyInterpolate, get_theta
 from RMFCalculator.tov import OutputMR
-from RMFCalculator.tov.unit import g_cm_3, dyn_cm_2, km, Msun, MeV, fm
+from RMFCalculator.tov.unit import g_cm_3, dyn_cm_2, km, Msun
 
 # 加载真实的壳层 EOS
 Tolos_crust = np.loadtxt(r'Tolos_crust_out.txt')
@@ -11,27 +9,11 @@ eps_crust_T = Tolos_crust[:, 3] * g_cm_3
 pres_crust_T = Tolos_crust[:, 4] * dyn_cm_2
 eps_com, pres_com = PolyInterpolate(eps_crust_T, pres_crust_T)
 
-# FSU 参数
-MeV_to_fm = 1.0 / 197.327
-FSU_params = {
-    'm_sigma': 491.5 * MeV_to_fm,
-    'm_omega': 782.5 * MeV_to_fm,
-    'm_rho': 763.0 * MeV_to_fm,
-    'g_sigma': math.sqrt(107.5751),
-    'g_omega': math.sqrt(204.5469),
-    'g_rho': math.sqrt(138.4701),
-    'kappa': 1.4203 * MeV_to_fm,
-    'lambda_0': 0.023762,
-    'zeta':  0.06,
-    'Lambda_w':  0.03,
-}
 
-
-theta = np.array([
-    FSU_params['m_sigma'], FSU_params['m_omega'], FSU_params['m_rho'],
-    FSU_params['g_sigma'], FSU_params['g_omega'], FSU_params['g_rho'],
-    FSU_params['kappa'], FSU_params['lambda_0'], FSU_params['zeta'], FSU_params['Lambda_w']
-])
+# FSUGold 参数: 统一从 RMFCalculator.eos.parameters.get_theta 获取 (fm^-1 单位)。
+# 注意: 早期代码在此手动除以 fm_MeV 并误用 g_sigma^2 = 107.5751,
+# 现已统一为正确的 g_sigma^2 = 112.1996 (见学位论文表 4-2)。
+theta = get_theta("FSU")
 
 # 计算 EOS
 x = compute_EOS(eps_com, pres_com, theta)
