@@ -1,3 +1,6 @@
+---
+title: "RMFCalculator"
+---
 # RMFCalculator
 
 Relativistic Mean Field Calculator for Neutron Star Equation of State.

@@ -10,6 +10,7 @@ from .parameters import (
     build_theta_delta_from_params,
     FSU_PARAMS_MEV,
     FSU_DELTA_PARAMS_MEV,
+    FSU_J0_PARAMS_MEV,
     FSU_DELTA67,
     FSU_DELTA62,
     get_theta,

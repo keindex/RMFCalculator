@@ -151,6 +151,17 @@ FSU_DELTA_PARAMS_MEV = {
 }
 
 
+# FSU-J0 参数 (学位论文表 4-2 第 2 列): 在 FSUGold 基础上将偏斜系数 J0 提到 -322 MeV,
+# 交叉密度处对称能斜率 L_c 提到 55 MeV (满足 PREX-II 中子皮), 无 δ 介子。
+# 耦合常数与 FSU-δ 系列共享基础 (g_σ = 10.2143, g_ω = 13.4353, b_σ, c_σ, c_ω),
+# 仅 g_ρ 与 Λ_V 不同: g_ρ = 5.31345 (小) → 10.6269 (代码), Λ_V = 0.171042 → Λ_ω = 0.02138025。
+FSU_J0_PARAMS_MEV = {
+    **FSU_DELTA_PARAMS_MEV,
+    'g_rho': 2 * 5.31345,               # $g_\rho$ = 10.6269
+    'Lambda_w': 0.171042 / 8,           # $\Lambda_\omega$ = 0.02138025
+}
+
+
 # FSU-δ6.7: g_δ = 6.7, Λ_σδ = 0.0385; g_ρ = 7.26866 (小) → 14.5373 (代码), Λ_V = 0.0214 → Λ_ω = 0.002675
 FSU_DELTA67 = {
     **FSU_DELTA_PARAMS_MEV,
@@ -179,7 +190,8 @@ def get_theta(name="FSU"):
 
     Args:
         name (str): 参数集名称:
-            - "FSU"       → 长度 10 的 $\theta$ (无 $\delta$ 介子)
+            - "FSU"       → 长度 10 的 $\theta$ (FSUGold, 无 $\delta$ 介子)
+            - "FSU_J0"    → 长度 10 的 $\theta$ (FSU-J0, 无 $\delta$ 介子)
             - "FSU_DELTA67" / "FSU_DELTA62" → 长度 13 的 $\theta_{13}$ (含 $\delta$ 介子)
 
     Returns:
@@ -188,8 +200,10 @@ def get_theta(name="FSU"):
     key = name.upper()
     if key == "FSU":
         return build_theta_from_params(**FSU_PARAMS_MEV)
+    if key in ("FSU_J0", "FSUJ0", "FSU-J0"):
+        return build_theta_from_params(**FSU_J0_PARAMS_MEV)
     if key in ("FSU_DELTA67", "FSU_DELTA6.7", "FSU_δ67", "FSUΔ67"):
         return build_theta_13_from_params(**FSU_DELTA67)
     if key in ("FSU_DELTA62", "FSU_DELTA6.2", "FSU_δ62", "FSUΔ62"):
         return build_theta_13_from_params(**FSU_DELTA62)
-    raise ValueError(f"未知参数集: {name!r}, 可用: ['FSU', 'FSU_DELTA67', 'FSU_DELTA62']")
+    raise ValueError(f"未知参数集: {name!r}, 可用: ['FSU', 'FSU_J0', 'FSU_DELTA67', 'FSU_DELTA62']")
