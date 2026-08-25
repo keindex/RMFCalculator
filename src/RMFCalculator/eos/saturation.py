@@ -46,10 +46,14 @@ def fluid_energy(theta, x_p, n_points=200, dt=0.005):
         tuple: $(\rho,\, E/A,\, P)$ — 过滤后的密度 (fm$^{-3}$)、
         每核子结合能 (MeV)、压强 (MeV/fm$^3$)
     """
+    # 调用 RMF 求解器计算 EOS
     EoS = compute_INEOS(theta, x_p=x_p, n_points=n_points, dt=dt)
     rho = EoS[:, 0]
+    # 能量密度: 自然单位 (fm$^{-4}$) → MeV/fm$^3$
     eps = EoS[:, 1] * fm_MeV
+    # 压强: 自然单位 (fm$^{-4}$) → MeV/fm$^3$
     P = EoS[:, 2] * fm_MeV
+    # 每核子结合能: $E/A = \varepsilon/\rho - m_n$, 单位: MeV
     binding = eps / rho - m_n * fm_MeV
 
     # 过滤低密度求解器失效的非物理解。
@@ -85,15 +89,17 @@ def find_saturation_density(theta, n_points=124, dt=0.05, rho_0=0.1505):
         }
     """
     # 计算对称核物质 EOS: 返回 [ρ, ε, P, μ_n, μ_p, x_p]
-    # 注意: compute_INEOS 返回的能量密度 ε 与压强 P 均为自然单位 (fm^-4),
-    # 需乘以 ħc = fm_MeV 转换为 MeV/fm^3。
+    # 注意: compute_INEOS 返回的能量密度 ε 与压强 P 均为自然单位 (fm$^{-4}$),
+    # 需乘以 $\hbar c = 197.327$ MeV·fm 转换为 MeV/fm$^3$。
     EoS = compute_INEOS(theta, x_p=0.5, n_points=n_points, dt=dt, rho_0=rho_0)
 
     rho = EoS[:, 0]
-    energy_density = EoS[:, 1] * fm_MeV   # → MeV/fm^3
-    pressure = EoS[:, 2] * fm_MeV         # → MeV/fm^3
+    # 能量密度: fm$^{-4}$ → MeV/fm$^3$
+    energy_density = EoS[:, 1] * fm_MeV
+    # 压强: fm$^{-4}$ → MeV/fm$^3$
+    pressure = EoS[:, 2] * fm_MeV
 
-    # 每核子结合能: E/A = ε/ρ - m_n (单位 MeV)
+    # 每核子结合能: $E/A = \varepsilon/\rho - m_n$, 单位: MeV
     binding = energy_density / rho - m_n * fm_MeV
 
     # 过滤低密度处求解器失效产生的非物理解 (E/A 异常, 如 -460 MeV)
@@ -103,7 +109,7 @@ def find_saturation_density(theta, n_points=124, dt=0.05, rho_0=0.1505):
     energy_density = energy_density[physical]
 
     # 寻找压强过零点 (饱和密度附近 P 由负转正)
-    # P(ρ) 在饱和密度处过零: ρ < ρ_0 时 P < 0, ρ > ρ_0 时 P > 0
+    # 饱和密度定义: $P(n_0) = 0$, 即 $n < n_0$ 时 $P < 0$, $n > n_0$ 时 $P > 0$
     sign_change = np.where(np.sign(pressure[:-1]) != np.sign(pressure[1:]))[0]
 
     if len(sign_change) == 0:
@@ -114,7 +120,7 @@ def find_saturation_density(theta, n_points=124, dt=0.05, rho_0=0.1505):
     # 取第一个过零点 (最接近饱和密度)
     i = sign_change[0]
 
-    # 在 [ρ_i, ρ_{i+1}] 区间线性插值求出 P = 0 的密度
+    # 在 $[\rho_i, \rho_{i+1}]$ 区间线性插值求出 $P = 0$ 的密度
     rho_grid = np.array([rho[i], rho[i + 1]])
     p_grid = np.array([pressure[i], pressure[i + 1]])
     rho_sat = np.interp(0.0, p_grid, rho_grid)
@@ -183,12 +189,12 @@ def compute_saturation_properties(theta, n_r=0.1, rho_0_override=None):
             'Ksym' : 对称能曲率 $K_{\rm sym}$ 在 $n_r$ 处 (MeV),
         }
     """
-    # ---- 1. 对称核物质 (SNM, x_p=0.5) 与纯中子物质 (PNM, x_p=0) ----
+    # ---- 1. 对称核物质 (SNM, $x_p=0.5$) 与纯中子物质 (PNM, $x_p=0$) ----
     rho_s, e_s, P_s = fluid_energy(theta, 0.5)
 
-    # 求饱和密度: P = n² dE/dn = 0 即 dE/dn = 0
+    # 求饱和密度: $P = n^2 dE/dn = 0$ 即 $dE/dn = 0$
     de_dn = np.gradient(e_s, rho_s)
-    # 找 de/dn 过零点 (由负转正)
+    # 找 $dE/dn$ 过零点 (由负转正)
     crossings = np.where(np.diff(np.sign(de_dn)))[0]
     if len(crossings) == 0:
         raise RuntimeError("未找到饱和密度 (dE/dn 过零点)。")
@@ -200,28 +206,30 @@ def compute_saturation_properties(theta, n_r=0.1, rho_0_override=None):
         idx = crossings[0]
         n0 = np.interp(0.0, de_dn[idx:idx + 2], rho_s[idx:idx + 2])
 
-    # 饱和处性质
+    # 饱和处每核子结合能 $E_0 = E/A(n_0)$
     E0 = np.interp(n0, rho_s, e_s)
 
-    # ---- 2. 计算 K0 和 J0 (基于压强 P, 数值更稳健) ----
-    # 饱和密度处 P = n² dE/dn = 0, 且 dP/dn = n² d²E/dn², 于是
-    #   K0 = 9 n² d²E/dn² = 9 dP/dn
-    #   J0 = 27 n³ d³E/dn³ = 27 n₀ d²P/dn² − 108 dP/dn
-    # 压强 P 比 E/A 更光滑, 用 Savitzky-Golay 求导可避免三阶差分的数值噪声。
+    # ---- 2. 计算 $K_0$ 和 $J_0$ (基于压强 $P$, 数值更稳健) ----
+    # 饱和密度处 $P = n^2 dE/dn = 0$, 且 $dP/dn = n^2 d^2E/dn^2$, 于是:
+    #   $K_0 = 9 n^2 d^2E/dn^2 = 9 dP/dn$
+    #   $J_0 = 27 n^3 d^3E/dn^3 = 27 n_0 d^2P/dn^2 - 108 dP/dn$
+    # 压强 $P$ 比 $E/A$ 更光滑, 用 Savitzky-Golay 求导可避免三阶差分的数值噪声。
     P = P_s
     h = rho_s[1] - rho_s[0]
 
-    # 取约 0.02 fm⁻³ 的窗口 (奇数长度), 保证落在 n0 附近
+    # 取约 0.02 fm$^{-3}$ 的窗口 (奇数长度), 保证落在 $n_0$ 附近
     wl = max(21, int(0.02 / h) | 1)
     dP = savgol_filter(P, wl, 5, deriv=1, delta=h)
     d2P = savgol_filter(P, wl, 5, deriv=2, delta=h)
     dP0 = np.interp(n0, rho_s, dP)
     d2P0 = np.interp(n0, rho_s, d2P)
 
+    # 不可压缩系数: $K_0 = 9 dP/dn|_{n=n_0}$
     K0 = 9.0 * dP0
+    # 偏斜系数: $J_0 = 27 n_0 d^2P/dn^2 - 108 dP/dn$
     J0 = 27.0 * n0 * d2P0 - 108.0 * dP0
 
-    # ---- 3. 对称能 (PNM - SNM) ----
+    # ---- 3. 对称能 $E_{\rm sym}(n) = E_{\rm PNM}(n) - E_{\rm SNM}(n)$ ----
     rho_pnm, e_pnm, _ = fluid_energy(theta, 0.0)
 
     # 对齐密度网格: 只保留两种物质都有效的密度范围
@@ -231,18 +239,20 @@ def compute_saturation_properties(theta, n_r=0.1, rho_0_override=None):
     e_snm_c = np.interp(rho_common, rho_s, e_s)
     e_pnm_c = np.interp(rho_common, rho_pnm, e_pnm)
 
-    # 对称能: E_sym(n) = E_PNM(n) - E_SNM(n)
+    # 对称能: $E_{\rm sym}(n) = E_{\rm PNM}(n) - E_{\rm SNM}(n)$
     e_sym = e_pnm_c - e_snm_c
 
-    # 对称能在饱和密度 n0 处
+    # 对称能在饱和密度 $n_0$ 处
     Esym0 = np.interp(n0, rho_common, e_sym)
 
-    # 在 n_r 处求 L 和 K_sym
+    # 在参考密度 $n_r$ 处求 $L$ 和 $K_{\rm sym}$
     Esym = np.interp(n_r, rho_common, e_sym)
+    # 对称能斜率: $L = 3 n_r dE_{\rm sym}/dn|_{n=n_r}$
     L = 3.0 * n_r * _deriv_interp(e_sym, rho_common, n_r, 1)
+    # 对称能曲率: $K_{\rm sym} = 9 n_r^2 d^2E_{\rm sym}/dn^2|_{n=n_r}$
     Ksym = 9.0 * n_r**2 * _deriv_interp(e_sym, rho_common, n_r, 2)
 
-    # 对称能斜率在饱和密度 n0 处: L(n0) = 3 n0 dE_sym/dn|_{n0}
+    # 对称能斜率在饱和密度 $n_0$ 处: $L(n_0) = 3 n_0 dE_{\rm sym}/dn|_{n=n_0}$
     L0 = 3.0 * n0 * _deriv_interp(e_sym, rho_common, n0, 1)
 
     return {

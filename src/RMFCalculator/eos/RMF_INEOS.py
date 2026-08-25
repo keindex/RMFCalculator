@@ -1,248 +1,222 @@
+r"""
+RMF_INEOS.py - 无限核物质状态方程计算 (含/不含同位旋矢量-标量介子 $\delta$)
+
+基于 FSUGold-δ 模型 (学位论文第四章 / 论文 arXiv:2207.04406 的 FSU-δ6.7, FSU-δ6.2),
+在 FSUGold 基础上引入 $\delta$ 介子及 $\sigma$-$\delta$ 交叉耦合:
+
+$$\mathcal{L}_{\delta} \supset g_\delta\, \vec{\delta}\cdot\bar\psi\vec{\tau}\psi
+  + \tfrac12\left(\partial_\mu\vec{\delta}\cdot\partial^\mu\vec{\delta} - m_\delta^2\vec{\delta}\cdot\vec{\delta}\right)
+  + \tfrac12 \Lambda_{\sigma\delta}\, (g_\sigma\sigma)^2 (g_\delta\vec{\delta})^2$$
+
+静态均匀平均场下场方程 (论文式 4.8-4.11):
+
+$$
+\begin{aligned}
+m_\sigma^2\bar\sigma &= g_\sigma\left[n^s - b_\sigma M(g_\sigma\bar\sigma)^2 - c_\sigma(g_\sigma\bar\sigma)^3
+  + \Lambda_{\sigma\delta}(g_\sigma\bar\sigma)(g_\delta\bar\delta)^2\right] \\
+m_\omega^2\bar\omega &= g_\omega\left[n - c_\omega(g_\omega\bar\omega)^3
+  - \lambda_v(g_\omega\bar\omega)(g_\rho\bar\rho)^2\right] \\
+m_\rho^2\bar\rho &= g_\rho\left[(n_p - n_n) - \lambda_v(g_\rho\bar\rho)(g_\omega\bar\omega)^2\right] \\
+m_\delta^2\bar\delta &= g_\delta\left[(n_p^s - n_n^s)
+  + \Lambda_{\sigma\delta}(g_\delta\bar\delta)(g_\sigma\bar\sigma)^2\right]
+\end{aligned}
+$$
+
+核子 Dirac 有效质量劈裂:
+
+$$M_J^* = M - g_\sigma\bar\sigma - g_\delta\bar\delta\, \tau_3^J, \qquad J = p, n$$
+
+能量密度与压强包含 $\delta$ 场项 (论文式 4.12-4.13)。
+
+本模块求解变量 $x = [\sigma, \omega, \rho_{03}, \delta, \mu_n, \mu_p]$ (6 个)。
+**不含 $\delta$ 介子的模型 ($g_\delta = \Lambda_{\sigma\delta} = 0$) 是本模型的特例**:
+此时 $\delta$ 场方程退化为 $\delta = 0$, 有效质量劈裂消失, 与无 $\delta$ 模型完全一致。
+因此本模块统一作为两种模型的求解器, 统一接受 13 元参数向量 $\theta_{13}$:
+
+$$\theta_{13} = [m_\sigma, m_\omega, m_\rho, m_\delta, g_\sigma, g_\omega, g_\rho, g_\delta, \kappa, \lambda_0, \zeta, \Lambda_\omega, \Lambda_{\sigma\delta}]$$
+
+约定:
+- 本模块采用与 ``RMF_betaEOS`` 相同的 "大 $g_\rho$" 约定,
+  即 $\rho$ 场方程源项为 $\tfrac12(\rho_p - \rho_n)$;
+- 论文式 (4.9)/(4.10) 中的 $\lambda_v$ 在此即 $\Lambda_\omega$。
 """
-RMF_INEOS.py - 无限核物质状态方程计算 (不含β平衡)
-
-基于相对论平均场 (RMF) 理论计算无限核物质的能量密度和压强。
-不考虑β平衡条件，仅计算核物质部分。
-"""
-
-from RMFCalculator.eos.unit import *
-
-from scipy import optimize
-
-import numpy as np
 
 import math
 
+import numpy as np
+from scipy import optimize
 
-def _validate_rmf_theta(theta):
+from RMFCalculator.eos.unit import m_n, Matrix_b, fm_MeV
+
+
+def _validate_theta13(theta):
     r"""
-    校验并返回长度为 10 的数值型 RMF 参数向量 $\theta$。
+    校验并返回 13 元含 $\delta$ 介子的 RMF 参数向量 $\theta_{13}$。
 
-    $$\theta = [m_\sigma,\, m_\omega,\, m_\rho,\, g_\sigma,\, g_\omega,\, g_\rho,\, \kappa,\, \lambda_0,\, \zeta,\, \Lambda_\omega]$$
+    $$\theta_{13} = [m_\sigma, m_\omega, m_\rho, m_\delta, g_\sigma, g_\omega, g_\rho, g_\delta, \kappa, \lambda_0, \zeta, \Lambda_\omega, \Lambda_{\sigma\delta}]$$
     """
-    try:
-        theta_array = np.asarray(theta, dtype=np.float64)
-
-    except (TypeError, ValueError) as exc:
+    theta = np.asarray(theta, dtype=np.float64)
+    if theta.shape != (13,):
         raise TypeError(
-            "RMF_INEOS expects a length-10 numeric RMF theta."
-        ) from exc
-
-    if theta_array.shape != (10,):
-        raise TypeError(
-            "RMF_INEOS expects a length-10 numeric RMF theta."
+            "RMF_INEOS expects a length-13 numeric RMF theta13."
         )
+    return theta
 
-    return theta_array
+
+def _unpack_theta13(theta):
+    r"""解包 13 元参数向量为标量量, 返回:
+    ``m_sig, m_w, m_rho, m_delta, g_sigma, g_omega, g_rho, g_delta, kappa, lambda_0, zeta, Lambda_w, Lambda_sigma_delta``
+    """
+    (m_sig, m_w, m_rho, m_delta, g_sigma, g_omega, g_rho,
+     g_delta, kappa, lambda_0, zeta, Lambda_w, Lambda_sigma_delta) = theta
+    return (m_sig, m_w, m_rho, m_delta, g_sigma, g_omega, g_rho,
+            g_delta, kappa, lambda_0, zeta, Lambda_w, Lambda_sigma_delta)
 
 
 def initial_values(rho, theta, proton_fraction=0.5):
     r"""
-    在给定重子数密度 $\rho$ 下, 估算 RMF 场与化学势的初值。
+    在给定重子数密度 $\rho$ 下估算 6 个场/化学势初值 (线性化平均场近似)。
 
-    基于线性化/平均场近似, 对对称核物质 ($x_p = 0.5$) 近似处理。
+    对称核物质 ($x_p = 0.5$) 时 $\bar\delta = 0$, 与无 $\delta$ 情形一致。
 
     Args:
-        rho (float): 重子数密度 $\rho$, 单位: fm$^{-3}$
-        theta (array): RMF 模型 10 个参数
-        proton_fraction (float): 质子分数, 默认 0.5 (对称核物质)
+        rho (float): 重子数密度 (fm$^{-3}$)
+        theta (array): 13 元 RMF 参数向量 $\theta_{13}$
+        proton_fraction (float): 质子分数, 默认 0.5
 
     Returns:
-        tuple: $(\sigma,\, \omega,\, \rho_{03},\, \mu_n,\, \mu_p)$
+        tuple: $(\sigma,\, \omega,\, \rho_{03},\, \delta,\, \mu_n,\, \mu_p)$
     """
-    # 解包 RMF 参数向量 $\theta$
-    # $$\theta = [m_\sigma,\, m_\omega,\, m_\rho,\, g_\sigma,\, g_\omega,\, g_\rho,\, \kappa,\, \lambda_0,\, \zeta,\, \Lambda_\omega]$$
-    m_sig, m_w, m_rho, g_sigma, g_omega, g_rho, kappa, lambda_0, zeta, Lambda_w = theta
+    theta13 = _validate_theta13(theta)
+    (m_sig, m_w, m_rho, m_delta, g_sigma, g_omega, g_rho,
+     g_delta, _kappa, _lambda_0, _zeta, Lambda_w, _Lambda_sd) = _unpack_theta13(theta13)
 
-    # $\sigma$ 场线性近似: $\sigma \approx \dfrac{g_\sigma \,\rho}{m_\sigma^2}$
+    # $\sigma$ 场线性近似: $\sigma \approx g_\sigma \rho / m_\sigma^2$
     sigma = g_sigma * rho / (m_sig**2)
-
-    # 同位旋矢量 $\rho_{03}$ 场线性近似:
-    # $$\rho_{03} \approx -\frac{g_\rho \,\rho\, (0.5 - x_p)}{m_\rho^2}$$
-    # 其中 $x_p$ 为质子分数, 对称核物质时 $x_p = 0.5$, $\rho_{03} = 0$
+    # $\rho_{03}$ 场线性近似: $\rho_{03} \approx -g_\rho \rho (1/2 - x_p) / m_\rho^2$
     rho_03 = -g_rho * rho * (0.5 - proton_fraction) / (m_rho**2)
-
-    # $\omega$ 场近似 (含 $\omega$-$\rho$ 交叉耦合):
-    # $$\omega \approx \frac{\rho}{\dfrac{m_\omega^2}{g_\omega} + 2\,\Lambda_\omega\, g_\omega\, (g_\rho\, \rho_{03})^2}$$
+    # $\omega$ 场线性近似 (含 $\Lambda_\omega$ 交叉耦合):
+    # $\omega \approx \rho / [m_\omega^2/g_\omega + 2\Lambda_\omega (g_\rho\rho_{03})^2 g_\omega]$
     omega = rho / (m_w**2 / g_omega + 2.0 * Lambda_w * (g_rho * rho_03)**2 * g_omega)
+    # $\delta$ 场线性近似: $\delta \approx g_\delta (n_p^s - n_n^s) / m_\delta^2$
+    # 在非对称核物质中 $n_p^s - n_n^s \approx \rho (2x_p - 1)/2$
+    delta = g_delta * rho * (2 * proton_fraction - 1.0) * 0.5 / (m_delta**2)
 
-    # 核子有效质量: $m^* = m_n - g_\sigma\, \sigma$
+    # 核子有效质量 (对称近似 $m^* = m_n - g_\sigma\sigma$)
     m_eff = m_n - g_sigma * sigma
-
     # 费米动量: $k_F = (3\pi^2 \rho)^{1/3}$, 单位: fm$^{-1}$
-    k_f = (3 * math.pi**2 * rho)**(1/3)
-
-    # 费米能量: $E_F = \sqrt{k_F^2 + m^{*2}}$
+    k_f = (3 * math.pi**2 * rho)**(1 / 3)
+    # 费米能量: $E_F = \sqrt{k_F^2 + m^{*2}}$, 单位: fm$^{-1}$
     E_F = math.sqrt(k_f**2 + m_eff**2)
 
-    # 核子化学势近似 = 费米能量 + 矢量势:
-    # $$\mu_b = E_F + g_\omega\, \omega + g_\rho\, \rho_{03}\, I_3^b$$
-    # 其中 $I_3$ 为同位旋第三分量 (质子 $+1/2$, 中子 $-1/2$)。
-    # 必须包含矢量势, 否则 $k_F^2 = E_F^2 - m^{*2} < 0$, 求解器会收敛到平凡解。
+    # 中子化学势: $\mu_n = E_F + g_\omega\omega + g_\rho\rho_{03} I_3^n$, $I_3^n = -1/2$
     mu_n = E_F + g_omega * omega + g_rho * rho_03 * Matrix_b[1, 2]
-
+    # 质子化学势: $\mu_p = E_F + g_\omega\omega + g_\rho\rho_{03} I_3^p$, $I_3^p = +1/2$
     mu_p = E_F + g_omega * omega + g_rho * rho_03 * Matrix_b[0, 2]
 
-    return sigma, omega, rho_03, mu_n, mu_p
+    return sigma, omega, rho_03, delta, mu_n, mu_p
 
 
 def functie(x, args):
     r"""
-    RMF 平均场自洽方程残差向量 $f(\sigma,\, \omega,\, \rho_{03},\, \mu_n,\, \mu_p) = 0$。
-
-    对于给定质子分数的核物质, 求解介子场与化学势。
+    RMF 平均场自洽方程残差向量 $f(\sigma, \omega, \rho_{03}, \delta, \mu_n, \mu_p) = 0$。
 
     Args:
-        x (array): $[\sigma,\, \omega,\, \rho_{03},\, \mu_n,\, \mu_p]$ 当前试探解
-        args (array): $\theta$ 的 10 个参数 + 密度 $\rho$ + 质子分数 $x_p$ (共 12 元)
+        x (array): $[\sigma, \omega, \rho_{03}, \delta, \mu_n, \mu_p]$
+        args (array): theta13 的 13 参数 + 密度 $\rho$ + 质子分数 $x_p$ (共 15 元)
 
     Returns:
-        list: 五个残差 $f_i^2$
+        list: 6 个原始残差 $f_i$ (供 scipy.optimize.root 的 LM 方法使用)。
+        LM 方法内部会对残差平方求和, 因此不能在此再平方。
     """
-    # ==================== 解包参数 ====================
+    (m_sig, m_w, m_rho, m_delta, g_sigma, g_omega, g_rho,
+     g_delta, kappa, lambda_0, zeta, Lambda_w, Lambda_sigma_delta) = _unpack_theta13(args[:13])
+    rho = args[13]
+    x_p = args[14]
 
-    # 解包 RMF 参数向量 $\theta$:
-    # $$\theta = [m_\sigma,\, m_\omega,\, m_\rho,\, g_\sigma,\, g_\omega,\, g_\rho,\, \kappa,\, \lambda_0,\, \zeta,\, \Lambda_\omega]$$
-    m_sig = args[0]
-
-    m_w = args[1]
-
-    m_rho = args[2]
-
-    g_sigma = args[3]
-
-    g_omega = args[4]
-
-    g_rho = args[5]
-
-    kappa = args[6]
-
-    lambda_0 = args[7]
-
-    zeta = args[8]
-
-    Lambda_w = args[9]
-
-    # 重子数密度 $\rho$, 单位: fm$^{-3}$
-    rho = args[10]
-
-    # 质子分数 $x_p$
-    x_p = args[11]
-
-    # ==================== 解包试探解 ====================
-
-    # 当前试探解: $x = [\sigma,\, \omega,\, \rho_{03},\, \mu_n,\, \mu_p]$
-    sigma = x[0]
-
-    omega = x[1]
-
-    rho_03 = x[2]
-
-    mu_n = x[3]
-
-    mu_p = x[4]
-
-    # 化学势列表: $[\mu_p,\, \mu_n]$, 对应 $i=0$ (质子), $i=1$ (中子)
+    sigma, omega, rho_03, delta, mu_n, mu_p = x
     mu_B_list = [mu_p, mu_n]
 
-    # 初始化重子数密度列表 $\rho_B$ 和标量密度列表 $\rho_{SB}$
-    rho_B_list = []
+    # δ 介子耦合的同位旋因子: 论文式 (4.3a) 中 $\tau_3^J$, 质子 $+1$, 中子 $-1$
+    # (注意: 这是 $\tau_3$ 而非 $I_3=\pm1/2$, 见论文式 4.3a/4.58)
+    tau3 = np.array([1.0, -1.0])
 
+    # 核子 Dirac 有效质量: $M_J^* = M - g_\sigma\sigma - g_\delta\delta\, \tau_3^J$
+    m_eff_p = m_n - g_sigma * sigma - g_delta * delta * tau3[0]
+    m_eff_n = m_n - g_sigma * sigma - g_delta * delta * tau3[1]
+    m_eff_list = [m_eff_p, m_eff_n]
+
+    rho_B_list = []
     rho_SB_list = []
 
-    # ==================== 核子有效质量 ====================
+    # ρ 介子矢量耦合仍用同位旋第三分量 $I_3 = \pm 1/2$ (与 RMF_INEOS 一致)
+    I3 = Matrix_b[:, 2]
 
-    # 核子有效质量: $m^* = m_n - g_\sigma\, \sigma$
-    # 其中 $m_n$ 为核子质量, $g_\sigma$ 为 $\sigma$ 介子耦合常数, $\sigma$ 为标量场期望值
-    m_eff = m_n - g_sigma * sigma
-
-    # ==================== 遍历两种核子 (质子 i=0, 中子 i=1) ====================
-
-    # 对每种核子计算费米能量、费米动量、重子数密度和标量密度
-    # 质子: $I_3 = +1/2$; 中子: $I_3 = -1/2$ (由 Matrix_b[i, 2] 给出)
     for i in range(2):
-
-        # 费米能量 (单粒子能量):
-        # $$E_F^b = \mu_b - g_\omega\, \omega - g_\rho\, \rho_{03}\, I_3^b$$
-        # 其中 $\mu_b$ 为核子化学势, $g_\omega \omega$ 为矢量排斥势, $g_\rho \rho_{03} I_3$ 为同位旋矢量势
-        E_fb = mu_B_list[i] - g_omega * omega - g_rho * rho_03 * Matrix_b[i, 2]
-
-        # 费米动量平方: $(k_F^b)^2 = (E_F^b)^2 - m^{*2}$
-        # 若 $(k_F^b)^2 < 0$, 说明费米能量低于有效质量, 取 $k_F^b = 0$, $E_F^b = m^*$
-        k_fb_sq = E_fb**2 - m_eff**2
-
+        mf = m_eff_list[i]
+        # 负有效质量分支 (Dirac 质量劈裂极端化, 如纯中子物质中的质子):
+        # 无物理费米海, 贡献置 0, 避免 log(负值) 产生 NaN
+        if mf <= 0.0:
+            rho_B_list.append(0.0)
+            rho_SB_list.append(0.0)
+            continue
+        E_fb = mu_B_list[i] - g_omega * omega - g_rho * rho_03 * I3[i]
+        k_fb_sq = E_fb**2 - mf**2
         if k_fb_sq < 0:
             k_fb_sq = np.clip(k_fb_sq, a_min=0.0, a_max=None)
-
-            E_fb = m_eff
-
-        # 费米动量: $k_F^b = \sqrt{(E_F^b)^2 - m^{*2}}$, 单位: fm$^{-1}$
+            E_fb = mf
         k_fb = math.sqrt(k_fb_sq)
 
-        # 重子数密度:
-        # $$\rho_b = \frac{(k_F^b)^3}{3\pi^2}$$
-        # 单位: fm$^{-3}$, 由费米动量在动量空间积分得到
+        # 重子数密度: $\rho_B = k_F^3 / (3\pi^2)$, 单位: fm$^{-3}$
         rho_B = k_fb**3 / (3 * math.pi**2)
-
         rho_B_list.append(rho_B)
 
-        # 标量密度:
-        # $$\rho_{SB}^b = \frac{m^*}{2\pi^2}\left[E_F^b\, k_F^b - m^{*2}\, \ln\frac{E_F^b + k_F^b}{m^*}\right]$$
-        # 标量密度出现在 $\sigma$ 场方程中, 描述核子的标量源
-        rho_SB = (m_eff / (2 * math.pi**2)) * (
-            E_fb * k_fb - m_eff**2 * np.log((E_fb + k_fb) / m_eff)
+        # 标量密度: $n_J^s = \frac{M_J^*}{2\pi^2}\left[E_F k_F - M_J^{*2}\ln\frac{E_F + k_F}{M_J^*}\right]$
+        rho_SB = (mf / (2 * math.pi**2)) * (
+            E_fb * k_fb - mf**2 * np.log((E_fb + k_fb) / mf)
         )
-
         rho_SB_list.append(rho_SB)
 
-    # ==================== 提取质子与中子数密度 ====================
-
-    # 质子数密度: $\rho_p = \rho_B^{(0)}$
     rho_p = rho_B_list[0]
-
-    # 中子数密度: $\rho_n = \rho_B^{(1)}$
     rho_n = rho_B_list[1]
-
-    # 总重子数密度: $\rho_B = \rho_p + \rho_n$
+    rho_s_p = rho_SB_list[0]
+    rho_s_n = rho_SB_list[1]
     rho_total = rho_p + rho_n
 
-    # ==================== RMF 自洽方程残差 (5个方程) ====================
-
     f = [
-        # (1) $\sigma$ 场方程残差:
-        # $$\frac{m_\sigma^2}{g_\sigma}\,\sigma = \sum_b \rho_{SB}^b - \frac{\kappa}{2}(g_\sigma\,\sigma)^2 - \frac{\lambda_0}{6}(g_\sigma\,\sigma)^3$$
-        # 移项后取平方作为残差
+        # (1) $\sigma$ 场方程 (含 $\Lambda_{\sigma\delta}$ 项)
         (
             sigma * m_sig**2 / g_sigma
-            - sum(rho_SB_list)
+            - (rho_s_p + rho_s_n)
             + kappa * (g_sigma * sigma)**2 / 2
             + lambda_0 * (g_sigma * sigma)**3 / 6
-        )**2,
-
-        # (2) $\omega$ 场方程残差:
-        # $$\frac{m_\omega^2}{g_\omega}\,\omega = \rho_B - \frac{\zeta}{6}(g_\omega\,\omega)^3 - 2\,\Lambda_\omega\, g_\omega\, \omega\, (g_\rho\, \rho_{03})^2$$
-        # 移项后取平方作为残差
+            - Lambda_sigma_delta * (g_sigma * sigma) * (g_delta * delta)**2
+        ),
+        # (2) $\omega$ 场方程
         (
             omega * m_w**2 / g_omega
             - rho_total
             + zeta * (g_omega * omega)**3 / 6
             + 2 * Lambda_w * g_omega * omega * (rho_03 * g_rho)**2
-        )**2,
-
-        # (3) $\rho$ 场方程残差:
-        # $$\frac{m_\rho^2}{g_\rho}\,\rho_{03} = \frac{1}{2}(\rho_p - \rho_n) - 2\,\Lambda_\omega\, g_\rho\, \rho_{03}\, (g_\omega\, \omega)^2$$
-        # 移项后取平方作为残差
+        ),
+        # (3) $\rho$ 场方程
         (
             rho_03 * m_rho**2 / g_rho
-            - (rho_p * 0.5 - rho_n * 0.5)
+            - 0.5 * (rho_p - rho_n)
             + 2 * Lambda_w * g_rho * rho_03 * (omega * g_omega)**2
-        )**2,
-
-        # (4) 重子数守恒约束: $\rho = \rho_p + \rho_n$
-        (rho - rho_total)**2,
-
-        # (5) 质子分数约束: $x_p = \dfrac{\rho_p}{\rho}$
-        (x_p - rho_p / rho)**2,
+        ),
+        # (4) $\delta$ 场方程 (含 $\Lambda_{\sigma\delta}$ 项)
+        # 乘以 $g_\delta$ 以避免 $g_\delta = 0$ (无 $\delta$ 介子) 时除零, 此时方程退化为
+        # $\delta m_\delta^2 = 0 \Rightarrow \delta = 0$, 与无 $\delta$ 模型一致。
+        (
+            delta * m_delta**2
+            - g_delta * (rho_s_p - rho_s_n)
+            - Lambda_sigma_delta * g_delta * (g_delta * delta) * (g_sigma * sigma)**2
+        ),
+        # (5) 重子数守恒: $\rho = \rho_p + \rho_n$
+        (rho - rho_total),
+        # (6) 质子分数约束: $x_p = \rho_p / \rho$
+        (x_p - rho_p / rho),
     ]
 
     return f
@@ -250,103 +224,84 @@ def functie(x, args):
 
 def Energy_density_Pressure(x, rho, theta, x_p=0.5):
     r"""
-    计算无限核物质的能量密度和压强。
+    计算无限核物质(含/不含 $\delta$ 介子)的能量密度与压强。
+
+    不含 $\delta$ 介子的情形 ($g_\delta = \Lambda_{\sigma\delta} = 0$) 由同一套代码处理。
 
     Args:
-        x (array): $[\sigma,\, \omega,\, \rho_{03},\, \mu_n,\, \mu_p]$
-        rho (float): 重子数密度, 单位: fm$^{-3}$
-        theta (array): RMF 参数向量
-        x_p (float): 质子分数, 默认 0.5 (对称核物质)
+        x (array): $[\sigma, \omega, \rho_{03}, \delta, \mu_n, \mu_p]$
+        rho (float): 重子数密度 (fm$^{-3}$)
+        theta (array): 13 元 RMF 参数向量 $\theta_{13}$
+        x_p (float): 质子分数, 默认 0.5
 
     Returns:
-        list: $[\rho,\, \varepsilon,\, P,\, \mu_n,\, \mu_p,\, x_p]$
+        list: $[\rho, \varepsilon, P, \mu_n, \mu_p, x_p]$
     """
-    # ==================== 解包试探解 ====================
+    theta13 = _validate_theta13(theta)
+    sigma, omega, rho_03, delta, mu_n, mu_p = x
+    (m_sig, m_w, m_rho, m_delta, g_sigma, g_omega, g_rho,
+     g_delta, kappa, lambda_0, zeta, Lambda_w, Lambda_sigma_delta) = _unpack_theta13(theta13)
 
-    # 介子场与化学势: $x = [\sigma,\, \omega,\, \rho_{03},\, \mu_n,\, \mu_p]$
-    sigma, omega, rho_03, mu_n, mu_p = x
-
-    # 解包 RMF 参数向量 $\theta$:
-    # $$\theta = [m_\sigma,\, m_\omega,\, m_\rho,\, g_\sigma,\, g_\omega,\, g_\rho,\, \kappa,\, \lambda_0,\, \zeta,\, \Lambda_\omega]$$
-    m_sig, m_w, m_rho, g_sigma, g_omega, g_rho, kappa, lambda_0, zeta, Lambda_w = theta
-
-    # 初始化能量密度列表
-    energy_b_list = []
-
-    # 化学势列表: $[\mu_p,\, \mu_n]$, 对应 $i=0$ (质子), $i=1$ (中子)
     mu_B_list = [mu_p, mu_n]
+    tau3 = np.array([1.0, -1.0])
+    I3 = Matrix_b[:, 2]   # ρ 介子耦合: I₃ = ±1/2
 
-    # 初始化重子数密度列表
+    m_eff_p = m_n - g_sigma * sigma - g_delta * delta * tau3[0]
+    m_eff_n = m_n - g_sigma * sigma - g_delta * delta * tau3[1]
+    m_eff_list = [m_eff_p, m_eff_n]
+
+    energy_b_list = []
     rho_B_list = []
 
-    # ==================== 核子有效质量 ====================
-
-    # 核子有效质量: $m^* = m_n - g_\sigma\, \sigma$
-    m_eff = m_n - g_sigma * sigma
-
-    # ==================== 遍历两种核子 (质子 i=0, 中子 i=1) ====================
-
-    # 对每种核子计算费米能量、费米动量、重子数密度和能量密度
     for i in range(2):
-
-        # 费米能量 (单粒子能量):
-        # $$E_F^b = \mu_b - g_\omega\, \omega - g_\rho\, \rho_{03}\, I_3^b$$
-        E_fb = mu_B_list[i] - g_omega * omega - g_rho * rho_03 * Matrix_b[i, 2]
-
-        # 费米动量平方: $(k_F^b)^2 = (E_F^b)^2 - m^{*2}$
-        k_fb_sq = E_fb**2 - m_eff**2
-
+        mf = m_eff_list[i]
+        if mf <= 0.0:   # 负有效质量: 空费米海
+            rho_B_list.append(0.0)
+            energy_b_list.append(0.0)
+            continue
+        E_fb = mu_B_list[i] - g_omega * omega - g_rho * rho_03 * I3[i]
+        k_fb_sq = E_fb**2 - mf**2
         if k_fb_sq < 0:
             k_fb_sq = 0.0
-
-            E_fb = m_eff
-
-        # 费米动量: $k_F^b = \sqrt{(E_F^b)^2 - m^{*2}}$
+            E_fb = mf
         k_fb = math.sqrt(k_fb_sq)
 
-        # 重子数密度:
-        # $$\rho_b = \frac{(k_F^b)^3}{3\pi^2}$$
+        # 重子数密度: $\rho_B = k_F^3 / (3\pi^2)$, 单位: fm$^{-3}$
         rho_B = k_fb**3 / (3 * math.pi**2)
-
         rho_B_list.append(rho_B)
 
-        # 核子动能密度 (相对论费米气体积分):
-        # $$\varepsilon_b = \frac{1}{8\pi^2}\left[k_F^b\, (E_F^b)^3 + (k_F^b)^3\, E_F^b - m^{*4}\, \ln\frac{k_F^b + E_F^b}{m^*}\right]$$
-        # 单位: MeV/fm$^3$
+        # 核子动能密度 (相对论费米气体):
+        # $\varepsilon_B^{\text{kin}} = \frac{1}{8\pi^2}\left[k_F E_F^3 + k_F^3 E_F - M^{*4}\ln\frac{k_F + E_F}{M^*}\right]$
         energy_baryon = (1 / (8 * math.pi**2)) * (
-            k_fb * E_fb**3 + k_fb**3 * E_fb - m_eff**4 * np.log((k_fb + E_fb) / m_eff)
+            k_fb * E_fb**3 + k_fb**3 * E_fb - mf**4 * np.log((k_fb + E_fb) / mf)
         )
-
         energy_b_list.append(energy_baryon)
 
-    # ==================== 介子场能量项 ====================
-
-    # $\sigma$ 介子场能量:
-    # $$\varepsilon_\sigma = \frac{1}{2}(m_\sigma\, \sigma)^2 + \frac{\kappa}{6}(g_\sigma\, \sigma)^3 + \frac{\lambda_0}{24}(g_\sigma\, \sigma)^4$$
+    # $\sigma$ 场能量 (含 $\sigma$ 自相互作用 $\kappa, \lambda_0$ 及 $\sigma$-$\delta$ 交叉耦合 $\Lambda_{\sigma\delta}$):
+    
+    # $\mathcal{E}_\sigma = \frac12 m_\sigma^2\sigma^2 + \frac{\kappa}{6}(g_\sigma\sigma)^3 + \frac{\lambda_0}{24}(g_\sigma\sigma)^4 - \frac12 \Lambda_{\sigma\delta} (g_\sigma\sigma)^2 (g_\delta\delta)^2$
     sigma_terms = (
         0.5 * (sigma * m_sig)**2
         + kappa * (g_sigma * sigma)**3 / 6
         + lambda_0 * (g_sigma * sigma)**4 / 24
+        - 0.5 * Lambda_sigma_delta * (g_sigma * sigma)**2 * (g_delta * delta)**2
     )
 
-    # $\omega$ 介子场能量:
-    # $$\varepsilon_\omega = \frac{1}{2}(m_\omega\, \omega)^2 + \frac{\zeta}{8}(g_\omega\, \omega)^4$$
+    # $\omega$ 场能量 (含 $\omega$ 四次自耦合 $\zeta$):
+    # $\mathcal{E}_\omega = \frac12 m_\omega^2\omega^2 + \frac{\zeta}{8}(g_\omega\omega)^4$
     omega_terms = 0.5 * (omega * m_w)**2 + zeta * (g_omega * omega)**4 / 8
 
-    # $\rho$ 介子场能量 (含 $\omega$-$\rho$ 交叉耦合):
-    # $$\varepsilon_\rho = \frac{1}{2}(m_\rho\, \rho_{03})^2 + 3\,\Lambda_\omega\, (g_\rho\, \rho_{03}\, g_\omega\, \omega)^2$$
+    # $\rho$ 场能量 (含 $\omega$-$\rho$ 交叉耦合 $\Lambda_\omega$):
+    # $\mathcal{E}_\rho = \frac12 m_\rho^2\rho_{03}^2 + 3\Lambda_\omega (g_\rho\rho_{03} g_\omega\omega)^2$
     rho_terms = 0.5 * (rho_03 * m_rho)**2 + 3 * Lambda_w * (g_rho * rho_03 * g_omega * omega)**2
 
-    # ==================== 总能量密度 ====================
+    # $\delta$ 场能量: $\mathcal{E}_\delta = \frac12 m_\delta^2 \delta^2$
+    delta_terms = 0.5 * (delta * m_delta)**2
 
-    # 总能量密度:
-    # $$\varepsilon = \sum_b \varepsilon_b + \varepsilon_\sigma + \varepsilon_\omega + \varepsilon_\rho$$
-    energy_density = sum(energy_b_list) + sigma_terms + omega_terms + rho_terms
+    # 总能量密度: $\mathcal{E} = \sum_J \mathcal{E}_J^{\text{kin}} + \mathcal{E}_\sigma + \mathcal{E}_\omega + \mathcal{E}_\rho + \mathcal{E}_\delta$
+    energy_density = sum(energy_b_list) + sigma_terms + omega_terms + rho_terms + delta_terms
 
-    # ==================== 压强 ====================
-
-    # 压强 (热力学关系):
-    # $$P = \sum_b \mu_b\, \rho_b - \varepsilon$$
+    # 压强 (热力学关系): $P = \sum_J \mu_J \rho_J - \mathcal{E}$
     Pressure = sum(mu_B_list[i] * rho_B_list[i] for i in range(2)) - energy_density
 
     return [rho, energy_density, Pressure, mu_n, mu_p, x_p]
@@ -354,140 +309,72 @@ def Energy_density_Pressure(x, rho, theta, x_p=0.5):
 
 def compute_INEOS(theta, x_p=0.5, n_points=124, dt=0.05, rho_0=0.1505):
     r"""
-    计算无限核物质状态方程。
+    计算含/不含 $\delta$ 介子的无限核物质状态方程。
+
+    不含 $\delta$ 介子的模型 ($g_\delta = \Lambda_{\sigma\delta} = 0$) 是含 $\delta$ 介子模型
+    的特例, 统一使用 13 元参数向量 $\theta_{13}$。
 
     Args:
-        theta (array): RMF 参数向量 $[m_\sigma,\, m_\omega,\, m_\rho,\, g_\sigma,\, g_\omega,\, g_\rho,\, \kappa,\, \lambda_0,\, \zeta,\, \Lambda_\omega]$
+        theta (array): 13 元 RMF 参数向量 $\theta_{13}$
         x_p (float): 质子分数, 默认 0.5 (对称核物质)
         n_points (int): 密度点数量, 默认 124
         dt (float): 密度步长因子, 默认 0.05
-        rho_0 (float): 饱和密度, 默认 0.1505 fm$^{-3}$
+        rho_0 (float): 参考饱和密度, 默认 0.1505 fm$^{-3}$
 
     Returns:
-        ndarray: $(6,\, n_\text{points})$ 数组, 包含:
+        ndarray: $(6, n_\text{points})$ 数组, 行:
             [0] 重子数密度 $\rho$ (fm$^{-3}$)
-            [1] 能量密度 $\varepsilon$ (MeV/fm$^3$)
-            [2] 压强 $P$ (MeV/fm$^3$)
-            [3] 中子化学势 $\mu_n$ (MeV)
-            [4] 质子化学势 $\mu_p$ (MeV)
+            [1] 能量密度 $\varepsilon$ (fm$^{-4}$, 自然单位)
+            [2] 压强 $P$ (fm$^{-4}$, 自然单位)
+            [3] 中子化学势 $\mu_n$ (fm$^{-1}$)
+            [4] 质子化学势 $\mu_p$ (fm$^{-1}$)
             [5] 质子分数 $x_p$
+        (乘以 ``fm_MeV`` 即得 MeV/fm$^3$)
     """
-    # 校验参数向量 $\theta$
-    theta = _validate_rmf_theta(theta)
+    theta13 = _validate_theta13(theta)
 
-    # 在最低密度点估算初值: $\rho_\text{init} = 0.1\, \rho_0$
-    x_init = np.array(initial_values(0.1 * rho_0, theta, x_p))
+    # 在最低密度点 $0.1\rho_0$ 处估算初值
+    x_init = np.array(initial_values(0.1 * rho_0, theta13, x_p))
 
-    # 初始化 EOS 数组
     EoS = [[] for _ in range(n_points)]
 
-    # ==================== 密度循环 ====================
-
-    # 从 $\rho = 0.1\, \rho_0$ 开始, 以步长 $\Delta\rho = dt \cdot \rho_0$ 递增
-    # $$\rho_i = 0.1\, \rho_0 + dt \cdot i \cdot \rho_0, \quad i = 0, 1, \ldots, n_\text{points}-1$$
+    # 从低密度到高密度逐点求解, 以上一点解作为下一点初值 (延续法)
     for i in range(n_points):
-
-        # 当前密度: $\rho_i = 0.1\, \rho_0 + dt \cdot i \cdot \rho_0$
+        # 密度网格: $\rho_i = 0.1\rho_0 + i \cdot dt \cdot \rho_0$
         rho = 0.1 * rho_0 + dt * i * rho_0
 
-        # 构造求解器参数: $[\theta,\, \rho,\, x_p]$
-        arg = np.array([*theta, rho, x_p])
+        # 参数向量: [theta13, rho, x_p] 共 15 元
+        arg = np.array([*theta13, rho, x_p])
 
-        # 求解 RMF 自洽方程: $f(\sigma,\, \omega,\, \rho_{03},\, \mu_n,\, \mu_p) = 0$
-        # 使用 Levenberg-Marquardt 方法
+        # 使用 Levenberg-Marquardt 方法求解非线性方程组
         sol = optimize.root(functie, x_init, method="lm", args=arg)
 
         if not sol.success:
             print(f"Warning: solver failed at i={i}, rho={rho:.4f}")
 
-        # 计算能量密度和压强: $\varepsilon,\, P$
-        Re = Energy_density_Pressure(sol.x, rho, theta, x_p)
-
+        # 计算能量密度和压强
+        Re = Energy_density_Pressure(sol.x, rho, theta13, x_p)
         EoS[i] = Re
 
-        # 以上一密度点的解作为下一密度点的初值 (热力学连续性)
+        # 延续法: 当前解作为下一密度点的初值
         x_init = sol.x
 
-    EoS = np.array(EoS)
-
-    return EoS
-
-
-def compute_symmetric_INEOS(theta, n_points=124, dt=0.05, rho_0=0.1505):
-    r"""
-    计算对称核物质 ($x_p = 0.5$) 状态方程。
-
-    Args:
-        theta (array): RMF 参数向量
-        n_points (int): 密度点数量
-        dt (float): 密度步长因子
-        rho_0 (float): 饱和密度
-
-    Returns:
-        ndarray: 对称核物质 EOS
-    """
-    return compute_INEOS(theta, x_p=0.5, n_points=n_points, dt=dt, rho_0=rho_0)
-
-
-def convert_to_cgs(EoS):
-    r"""
-    将 EOS 单位从 MeV/fm$^3$ 转换为 cgs 单位。
-
-    Args:
-        EoS (ndarray): $(6,\, n)$ 数组
-
-    Returns:
-        ndarray: $(6,\, n)$ 数组, 单位:
-            $\rho$: g/cm$^3$
-            $\varepsilon$: g/cm$^3$
-            $P$: dyn/cm$^2$
-    """
-    result = EoS.copy()
-
-    # 能量密度单位换算: MeV/fm$^3$ → g/cm$^3$
-    # $$\varepsilon\,[\mathrm{g/cm^3}] = \varepsilon\,[\mathrm{MeV/fm^3}] \times \frac{\hbar c}{\mathrm{g/cm^3 \to MeV/fm^3}}$$
-    result[1] = EoS[1] * fm_MeV / gcm3_to_MeVfm3
-
-    # 压强单位换算: MeV/fm$^3$ → dyn/cm$^2$
-    # $$P\,[\mathrm{dyn/cm^2}] = P\,[\mathrm{MeV/fm^3}] \times \frac{\hbar c}{\mathrm{dyn/cm^2 \to MeV/fm^3}}$$
-    result[2] = EoS[2] * fm_MeV / dyncm2_to_MeVfm3
-
-    # 重子数密度单位换算: fm$^{-3}$ → g/cm$^3$
-    # $$\rho\,[\mathrm{g/cm^3}] = \rho\,[\mathrm{fm^{-3}}] \times 1.66054 \times 10^{14}$$
-    result[0] = EoS[0] * 1.66054e14
-
-    return result
+    return np.array(EoS)
 
 
 if __name__ == "__main__":
-    # 测试: 使用典型 RMF 参数 (NL3)
-    # $$\theta_\text{NL3} = [m_\sigma,\, m_\omega,\, m_\rho,\, g_\sigma,\, g_\omega,\, g_\rho,\, \kappa,\, \lambda_0,\, \zeta,\, \Lambda_\omega]$$
-    theta_nl3 = [
-        510.0,   # $m_\sigma$ (MeV)
-        783.0,   # $m_\omega$ (MeV)
-        770.0,   # $m_\rho$ (MeV)
-        8.91,    # $g_\sigma$
-        11.47,   # $g_\omega$
-        4.70,    # $g_\rho$
-        1.58,    # $\kappa$
-        -0.04,   # $\lambda_0$
-        0.00,    # $\zeta$
-        0.00,    # $\Lambda_\omega$
-    ]
+    from RMFCalculator.eos.parameters import get_theta
 
-    print("Computing symmetric nuclear matter EOS with NL3 parameters...")
+    theta13_test = get_theta("FSU_DELTA67")
+    print("theta13:", theta13_test)
+    print("Computing symmetric nuclear matter EOS with FSU-δ6.7...")
 
-    EoS = compute_symmetric_INEOS(theta_nl3)
+    EoS_test = compute_INEOS(theta13_test, x_p=0.5, n_points=20, dt=0.05)
 
-    print("\nResults (first 5 points):")
-
-    print(f"{'ρ(fm⁻³)':<12} {'ε(MeV/fm³)':<14} {'P(MeV/fm³)':<14} {'μ_n(MeV)':<12} {'μ_p(MeV)':<12}")
-
-    print("-" * 64)
-
-    print(len(EoS))
-
-    for i in range(len(EoS)):
-        print(f"{EoS[i,0]:<12.4f} {EoS[i,1]:<14.4f} {EoS[i,2]:<14.4f} {EoS[i,3]:<12.4f} {EoS[i,4]:<12.4f}")
-
-
+    eps_test = EoS_test[:, 1] * fm_MeV
+    P_test = EoS_test[:, 2] * fm_MeV
+    rho_test = EoS_test[:, 0]
+    binding_test = eps_test / rho_test - m_n * fm_MeV
+    print(f"{'rho(fm-3)':<12}{'eps(fm-4)':<14}{'EA(MeV)':<14}{'P(fm-4)':<14}")
+    for k in range(10):
+        print(f"{rho_test[k]:<12.4f}{eps_test[k]:<14.4f}{binding_test[k]:<14.4f}{P_test[k]:<14.4f}")

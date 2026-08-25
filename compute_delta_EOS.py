@@ -9,10 +9,9 @@ compute_delta_EOS.py - 计算 RMF 模型 (FSUGold / FSU-J0 / FSU-δ6.7 / FSU-δ6
 - 饱和性质: $n_0, E_0, K_0$;
 - 对比绘图: 对称核物质 EOS、对称能、β 平衡 EOS (论文图 4-22 / 4-23 / 4-28 风格)。
 
-无 $\delta$ 介子的模型 (FSUGold, FSU-J0) 使用 10 元参数向量与 ``RMF_INEOS`` /
-``RMF_betaEOS`` (等效于 $\theta_{13}$ 中 $g_\delta = \Lambda_{\sigma\delta} = 0$);
+无 $\delta$ 介子的模型 (FSUGold, FSU-J0) 使用 13 元参数向量 ($g_\delta = \Lambda_{\sigma\delta} = 0$);
 含 $\delta$ 介子的模型 (FSU-δ6.7, FSU-δ6.2) 使用 13 元参数向量与
-``RMF_INEOS_delta`` / ``RMF_betaEOS_delta``。
+``RMF_INEOS`` / ``RMF_betaEOS``。
 
 用法:
     python compute_delta_EOS.py                # 全部 4 个模型
@@ -24,19 +23,12 @@ compute_delta_EOS.py - 计算 RMF 模型 (FSUGold / FSU-J0 / FSU-δ6.7 / FSU-δ6
 import argparse
 
 import numpy as np
-from scipy import optimize
 from scipy.signal import savgol_filter
 
 from RMFCalculator.eos.unit import fm_MeV, m_n
 from RMFCalculator.eos.parameters import get_theta
 from RMFCalculator.eos.RMF_INEOS import compute_INEOS
-from RMFCalculator.eos.RMF_INEOS_delta import compute_INEOS_delta
-from RMFCalculator.eos.RMF_betaEOS import (
-    initial_values as beta_init,
-    functie as beta_functie,
-    Energy_density_Pressure as beta_EdP,
-)
-from RMFCalculator.eos.RMF_betaEOS_delta import compute_EOS_delta
+from RMFCalculator.eos.RMF_betaEOS import compute_EOS
 
 # 论文图 4-22/4-23/4-28 中的线型: 红虚线 FSUGold, 绿点虚线 FSU-J0,
 # 蓝实线 FSU-δ6.7, 紫点线 FSU-δ6.2。
@@ -50,14 +42,14 @@ MODEL_ORDER = ["FSU", "FSU_J0", "FSU_DELTA67", "FSU_DELTA62"]
 
 
 def _is_delta(theta):
-    """含 δ 介子模型为 13 元参数向量, 否则为 10 元。"""
-    return np.asarray(theta).shape == (13,)
+    """含 δ 介子模型为 g_delta != 0 或 Lambda_sigma_delta != 0。"""
+    theta = np.asarray(theta)
+    # 13 元向量中 index 7 = g_delta, index 12 = Lambda_sigma_delta
+    return (theta.shape == (13,)) and (theta[7] != 0.0 or theta[12] != 0.0)
 
 
 def _ineos(theta, x_p, n_points=200, dt=0.005, rho_0=0.1505):
-    """按参数向量长度分发到含/不含 δ 介子的无限核物质求解器。"""
-    if _is_delta(theta):
-        return compute_INEOS_delta(theta, x_p=x_p, n_points=n_points, dt=dt, rho_0=rho_0)
+    """无限核物质求解器 (含/不含 δ 介子由同一套代码处理)。"""
     return compute_INEOS(theta, x_p=x_p, n_points=n_points, dt=dt, rho_0=rho_0)
 
 
@@ -85,9 +77,10 @@ def fluiddelta(theta, x_p, n_points=200, dt=0.005, rho_0=0.1505, rho_max=0.9, fi
     binding = eps / rho - m_n * fm_MeV
 
     if filter_unphysical:
-        mask = binding > -25.0
-        if x_p > 0.0:
-            mask &= binding < 5.0
+        # 仅过滤求解器崩溃产生的非物理解 (E/A 异常负值, 如 -460 MeV)。
+        # 不设上限: 高密度 (ρ > 0.3 fm⁻³) 时 E/A 物理上单调增长,
+        # SNM 可达 ~10 MeV, PNM 可达 ~70 MeV, 旧版 `binding < 5.0` 会误删这些点。
+        mask = np.isfinite(binding) & (binding > -25.0)
         return rho[mask], binding[mask], P[mask]
     return rho, binding, P
 
@@ -149,29 +142,15 @@ def beta_eos(theta, n_points=124, dt=0.05, rho_0=0.1505):
     r"""
     计算 β 平衡 (npeμ) 中子星物质 EOS。
 
-    含 $\delta$ 模型直接调用 ``RMF_betaEOS_delta.compute_EOS_delta``;
-    无 $\delta$ 模型用与 ``RMF_betaEOS.compute_EOS`` 相同的场方程循环 (不拼接壳层)。
+    含/不含 $\delta$ 介子模型均由 ``RMF_betaEOS.compute_EOS`` 统一处理
+    (不含 $\delta$ 时 10 元 $\theta$ 补齐后走同一套代码)。
 
     Returns:
-        ndarray: (8, n_points) 数组, 与 ``compute_EOS_delta`` 输出格式一致:
+        ndarray: (n_points, 8) 数组:
             [0] $\rho$ (fm$^{-3}$), [1] $\varepsilon$ (fm$^{-4}$), [2] $P$ (fm$^{-4}$),
             [3-6] $\mu_p, \mu_n, \mu_e, \mu_\mu$ (fm$^{-1}$), [7] 质子分数 $x_p$
     """
-    if _is_delta(theta):
-        return compute_EOS_delta(theta, n_points=n_points, dt=dt, rho_0=rho_0)
-
-    x_init = np.array(beta_init(0.1 * rho_0, theta))
-    EoS = []
-    for i in range(n_points):
-        rho = 0.1 * rho_0 + dt * i * rho_0
-        arg = np.append(theta, rho)
-        sol = optimize.root(beta_functie, x_init, method="lm", args=arg)
-        if not sol.success:
-            print(f"Warning: solver failed at i={i}, rho={rho:.4f}")
-        Re = beta_EdP(sol.x, rho, theta)
-        EoS.append(Re)
-        x_init = sol.x
-    return np.array(EoS)
+    return compute_EOS(theta, n_points=n_points, dt=dt, rho_0=rho_0)
 
 
 def report_model(name, theta):
@@ -181,7 +160,7 @@ def report_model(name, theta):
         print(f"模型: {name}   (含 δ 介子, θ13, "
               f"g_δ={theta[7]:.4f}, Λ_σδ={theta[12]:.6f})")
     else:
-        print(f"模型: {name}   (无 δ 介子, θ10, "
+        print(f"模型: {name}   (无 δ 介子, θ13, "
               f"g_ρ={theta[5]:.4f}, Λ_ω={theta[9]:.6f})")
     print("=" * 62)
 

@@ -1,5 +1,5 @@
 import numpy as np
-from RMFCalculator.eos import compute_EOS_delta, PolyInterpolate, get_theta
+from RMFCalculator.eos import compute_EOS, PolyInterpolate, get_theta
 from RMFCalculator.tov import OutputMR
 from RMFCalculator.tov.unit import km, Msun
 from RMFCalculator.eos.unit import fm_MeV, gcm3_to_MeVfm3, dyncm2_to_MeVfm3
@@ -11,13 +11,13 @@ pres_crust_T = Tolos_crust[:, 4]     # dyn/cm^2
 eps_com, pres_com = PolyInterpolate(eps_crust_T, pres_crust_T)
 
 
-# FSUGold 参数: 统一从 RMFCalculator.eos.parameters.get_theta 获取 (fm^-1 单位)。
+# FSU-δ6.2 参数: 统一从 RMFCalculator.eos.parameters.get_theta 获取 (fm^-1 单位)。
 # 注意: 早期代码在此手动除以 fm_MeV 并误用 g_sigma^2 = 107.5751,
 # 现已统一为正确的 g_sigma^2 = 112.1996 (见学位论文表 4-2)。
 theta = get_theta("FSU_DELTA62")
 print(f'使用参数: {theta}')
 # 计算内核 EOS (β 平衡, 输出 MeV/fm^3, 需换算回 cgs 才能与壳层连接)
-x = compute_EOS_delta(theta, n_points=200)
+x = compute_EOS(theta, n_points=200)
 eps_kernel_MeVfm3 = x[:, 1] * fm_MeV          # MeV/fm^3
 pres_kernel_MeVfm3 = x[:, 2] * fm_MeV         # MeV/fm^3
 eps_kernel = eps_kernel_MeVfm3 / gcm3_to_MeVfm3   # g/cm^3
