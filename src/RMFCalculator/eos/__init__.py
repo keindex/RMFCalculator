@@ -41,3 +41,12 @@ from .saturation import (
     find_saturation_density,
     compute_saturation_properties,
 )
+from .finite_nucleus import (
+    compute_finite_nucleus,
+    compute_Pb208,
+    compute_Sn132,
+    PARAMSETS,
+    NucleusParams,
+    FSU_GOLD_FN,
+    FSU_DELTA67_FN,
+)
