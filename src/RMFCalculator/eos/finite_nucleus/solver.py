@@ -48,12 +48,12 @@ def compute_finite_nucleus(
         dict: 包含场分布、密度、结合能等。
     """
     g_s, g_w, g_r, g_d = params.g_sigma, params.g_omega, params.g_rho, params.g_delta
-    m_sig = params.m_sigma * fm_MeV  # $m_\sigma^* = m_\sigma / (\hbar c)$ (fm$^{-1}$)
-    m_w = params.m_omega * fm_MeV    # $m_\omega^* = m_\omega / (\hbar c)$
-    m_rho = params.m_rho * fm_MeV    # $m_\rho^* = m_\rho / (\hbar c)$
-    m_d = params.m_delta * fm_MeV    # $m_\delta^* = m_\delta / (\hbar c)$
+    m_sig = params.m_sigma / fm_MeV  # $m_\sigma^* = m_\sigma / (\hbar c)$ (fm$^{-1}$)
+    m_w = params.m_omega / fm_MeV    # $m_\omega^* = m_\omega / (\hbar c)$
+    m_rho = params.m_rho / fm_MeV    # $m_\rho^* = m_\rho / (\hbar c)$
+    m_d = params.m_delta / fm_MeV    # $m_\delta^* = m_\delta / (\hbar c)$
 
-    kappa_c = params.kappa * fm_MeV  # $\kappa^* = \kappa / (\hbar c)$
+    kappa_c = params.kappa / fm_MeV  # $\kappa^* = \kappa / (\hbar c)$
     lam0, zeta_c = params.lambda0, params.zeta
     Lw, Lsd = params.Lambda_w, params.Lambda_sd
 
@@ -74,18 +74,18 @@ def compute_finite_nucleus(
 
     # 初始场 (局部近似 $\phi \approx \rho / m^2$)
     # $\sigma_0 = g_\sigma n_v / m_\sigma^{*2}$
-    sigma = np.full_like(r, g_s * n_v0[0] / (m_sig / fm_MeV) ** 2)  # $g_s n_v0 / m_sig^{*2}$
+    sigma = np.full_like(r, g_s * n_v0[0] / m_sig ** 2)  # $g_s n_v0 / m_\sigma^{*2}$
     # $\omega_0 = g_\omega n_v / m_\omega^{*2}$
-    omega = np.full_like(r, g_w * n_v0[0] / (m_w / fm_MeV) ** 2)  # $g_w n_v0 / m_w^{*2}$
+    omega = np.full_like(r, g_w * n_v0[0] / m_w ** 2)  # $g_w n_v0 / m_\omega^{*2}$
     # $\rho_0^3 = -g_\rho n_3 / (2 m_\rho^{*2})$ (因子 2 来自等式 $(-\nabla^2 + m^2)\rho = -g_\rho n_3$)
     rho03 = np.full_like(
         r,
-        -g_r * n_30[0] / (2.0 * (m_rho / fm_MeV) ** 2) if n_30[0] != 0 else 0.0,  # $-g_r n_30 / (2 m_rho^{*2})$
+        -g_r * n_30[0] / (2.0 * m_rho ** 2) if n_30[0] != 0 else 0.0,  # $-g_r n_30 / (2 m_\rho^{*2})$
     )
     # $\delta_0 = g_\delta n_{3s} / (2 m_\delta^{*2})$ (类似 rho 场)
     delta_f = np.full_like(
         r,
-        g_d * n_3s0[0] / (2.0 * (m_d / fm_MeV) ** 2)
+        g_d * n_3s0[0] / (2.0 * m_d ** 2)
         if g_d > 0 and n_3s0[0] != 0
         else 0.0,  # $g_d n_{3s0} / (2 m_d^{*2})$
     )
@@ -97,7 +97,7 @@ def compute_finite_nucleus(
     for it in range(max_iter):
         # 计算源项 (右端项 $s_i = g_i \rho_i$ 及自耦合修正)
         # $\sigma$ 场源: $s_\sigma = -g_\sigma [ n_s - \frac{\kappa}{2} (g_\sigma \sigma)^2 - \frac{\lambda_0}{6} (g_\sigma \sigma)^3 ]$
-        s_sigma = -g_s * (
+        s_sigma = g_s * (
             n_s0
             - kappa_c / (2.0 * fm_MeV ** 3) * (g_s * sigma) ** 2  # $\frac{\kappa}{2} (g_\sigma \sigma)^2$
             - lam0 / (6.0 * fm_MeV ** 4) * (g_s * sigma) ** 3  # $\frac{\lambda_0}{6} (g_\sigma \sigma)^3$
@@ -119,11 +119,11 @@ def compute_finite_nucleus(
         s_A0 = E_SQ * n_gamma0  # $e^2 n_\gamma$
 
         # Green 函数求解 (求解 $(-\nabla^2 + m^2) \phi = s$)
-        sigma_new = solve_field_1d(s_sigma, r, dr, m_sig / fm_MeV)  # $m_\sigma^* = m_\sigma / (\hbar c)$
-        omega_new = solve_field_1d(s_omega, r, dr, m_w / fm_MeV)   # $m_\omega^* = m_\omega / (\hbar c)$
-        rho03_new = solve_field_1d(s_rho, r, dr, m_rho / fm_MeV)   # $m_\rho^* = m_\rho / (\hbar c)$
+        sigma_new = solve_field_1d(s_sigma, r, dr, m_sig)  # $m_\sigma^* = m_\sigma / (\hbar c)$
+        omega_new = solve_field_1d(s_omega, r, dr, m_w)   # $m_\omega^* = m_\omega / (\hbar c)$
+        rho03_new = solve_field_1d(s_rho, r, dr, m_rho)   # $m_\rho^* = m_\rho / (\hbar c)$
         delta_new = (
-            solve_field_1d(s_delta, r, dr, m_d / fm_MeV)
+            solve_field_1d(s_delta, r, dr, m_d)
             if g_d > 0
             else np.zeros_like(r)
         )  # $m_\delta^* = m_\delta / (\hbar c)$

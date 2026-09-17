@@ -1,11 +1,23 @@
+from pathlib import Path
+
 import numpy as np
 from RMFCalculator.eos import compute_EOS, PolyInterpolate, get_theta
 from RMFCalculator.tov import OutputMR
 from RMFCalculator.tov.unit import km, Msun
 from RMFCalculator.eos.unit import fm_MeV, gcm3_to_MeVfm3, dyncm2_to_MeVfm3
 
+IMG_DIR = Path(__file__).resolve().parent.parent / "img"
+CRUST_RESOURCE = (
+	Path(__file__).resolve().parent.parent
+	/ "src"
+	/ "RMFCalculator"
+	/ "tov"
+	/ "resource"
+	/ "Tolos_crust_out.txt"
+)
+
 # 加载真实的壳层 EOS (Tolos_crust_out.txt 第 4/5 列已是 cgs 单位: g/cm^3, dyn/cm^2)
-Tolos_crust = np.loadtxt(r'Tolos_crust_out.txt')
+Tolos_crust = np.loadtxt(CRUST_RESOURCE)
 eps_crust_T = Tolos_crust[:, 3]      # g/cm^3
 pres_crust_T = Tolos_crust[:, 4]     # dyn/cm^2
 eps_com, pres_com = PolyInterpolate(eps_crust_T, pres_crust_T)
@@ -56,6 +68,6 @@ plt.xlim(4, 20)
 plt.ylim(0, 3)
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
-plt.savefig('mass_radius.png', dpi=150)
+plt.savefig(IMG_DIR / 'mass_radius.png', dpi=150)
 plt.show()
-print('图表已保存为 mass_radius.png')
+print(f'图表已保存为 {IMG_DIR / "mass_radius.png"}')

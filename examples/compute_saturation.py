@@ -13,9 +13,12 @@ compute_saturation.py - 计算核饱和密度
 """
 
 import argparse
+from pathlib import Path
 
 from RMFCalculator.eos import find_saturation_density, get_theta
 from RMFCalculator.eos.saturation import fluid_energy
+
+IMG_DIR = Path(__file__).resolve().parent.parent / "img"
 
 
 def main():
@@ -63,8 +66,8 @@ def plot_saturation(theta, rho_sat, dt=0.05):
     plt.legend()
     plt.grid(alpha=0.3)
     plt.tight_layout()
-    plt.savefig("saturation.png", dpi=150)
-    print("\nSaved figure: saturation.png")
+    plt.savefig(IMG_DIR / "saturation.png", dpi=150)
+    print(f"\nSaved figure: {IMG_DIR / 'saturation.png'}")
 
 
 if __name__ == "__main__":

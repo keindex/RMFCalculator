@@ -21,6 +21,7 @@ compute_delta_EOS.py - 计算 RMF 模型 (FSUGold / FSU-J0 / FSU-δ6.7 / FSU-δ6
 """
 
 import argparse
+from pathlib import Path
 
 import numpy as np
 from scipy.signal import savgol_filter
@@ -29,6 +30,8 @@ from RMFCalculator.eos.unit import fm_MeV, m_n
 from RMFCalculator.eos.parameters import get_theta
 from RMFCalculator.eos.RMF_INEOS import compute_INEOS
 from RMFCalculator.eos.RMF_betaEOS import compute_EOS
+
+IMG_DIR = Path(__file__).resolve().parent.parent / "img"
 
 # 论文图 4-22/4-23/4-28 中的线型: 红虚线 FSUGold, 绿点虚线 FSU-J0,
 # 蓝实线 FSU-δ6.7, 紫点线 FSU-δ6.2。
@@ -225,7 +228,7 @@ def main():
 
     if args.plot:
         plot_compare(results)
-        print("\n已保存 delta_eos_compare.png")
+        print(f"\n已保存 {IMG_DIR / 'delta_eos_compare.png'}")
 
 
 def _cs2(results):
@@ -326,7 +329,7 @@ def plot_compare(results):
     fig.suptitle('EOS comparison: FSUGold / FSU-J0 / FSU-$\\delta$6.7 / FSU-$\\delta$6.2',
                  fontsize=13)
     fig.tight_layout(rect=[0, 0, 1, 0.97])
-    fig.savefig("delta_eos_compare.png", dpi=150)
+    fig.savefig(IMG_DIR / "delta_eos_compare.png", dpi=150)
 
 
 if __name__ == "__main__":

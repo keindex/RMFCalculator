@@ -46,25 +46,21 @@ def solve_field_1d(
         phi[:-1] = charge / r[:-1]  # $A_0 = Q/r$
         phi[-1] = phi[-2] if N > 1 else 0.0
     else:
-        # 有质量场: 使用简单迭代法
-        # $\phi(r) \approx s(r) / m^2$ (局部近似, 适用于缓变场)
-        # 加上边界修正
-        phi_approx = source / (mass ** 2 + 1e-10)  # $\phi \approx s/m^2$
+        # 有质量场: 对球对称场使用 $u=r\phi$，则
+        # $-u'' + m^2 u = r s(r)$，并满足 $u(0)=u(R)=0$。
+        # 该形式同时保留了球对称 Laplace 算子的 $2\phi'/r$ 项。
+        r_full = np.concatenate(([0.0], r))
+        source_full = np.concatenate(([source[0]], source))
+        interior = slice(1, N)
+        diagonal = 2.0 / dr ** 2 + mass ** 2
+        off_diagonal = -1.0 / dr ** 2
 
-        # 平滑处理 (迭代求解 Helmholtz 方程)
-        phi = phi_approx.copy()
-        for _ in range(5):
-            phi_new = phi.copy()
-            # 五点差分算子: $\phi'' \approx (\phi_{i+1} - 2\phi_i + \phi_{i-1})/dr^2$
-            for i in range(1, N - 1):
-                d2phi = (phi[i + 1] - 2 * phi[i] + phi[i - 1]) / (dr ** 2)  # $\phi''$
-                phi_new[i] = (d2phi - source[i]) / (mass ** 2)  # $\phi = (\phi'' - s)/m^2$
-            # 边界
-            phi_new[0] = phi_new[1]  # 原点正则: $\phi'(0) = 0$
-            phi_new[-1] = 0.0  # 无穷远衰减: $\phi(\infty) = 0$
-            phi = 0.5 * phi + 0.5 * phi_new  # 阻尼更新
-
-        # 确保正值
-        phi = np.maximum(phi, 0.0)
+        matrix = np.diag(np.full(N - 1, diagonal))
+        matrix += np.diag(np.full(N - 2, off_diagonal), 1)
+        matrix += np.diag(np.full(N - 2, off_diagonal), -1)
+        rhs = r_full[interior] * source_full[interior]
+        u = np.zeros(N + 1)
+        u[interior] = np.linalg.solve(matrix, rhs)
+        phi = u[1:] / r
 
     return phi
