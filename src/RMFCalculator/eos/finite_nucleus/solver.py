@@ -20,6 +20,7 @@ import numpy as np
 from RMFCalculator.eos.unit import fm_MeV
 from .binding_energy import compute_binding_energy
 from .density import initial_densities, nuclear_radius
+from .dirac_solver import solve_dirac_densities
 from .green_function import solve_field_1d
 from .params import FSU_GOLD_FN, NucleusParams
 
@@ -93,6 +94,7 @@ def compute_finite_nucleus(
     A0 = np.full_like(r, Z * E_SQ / r[-1] if Z > 0 else 0.0)  # $Z e^2 / R_{max}$
 
     prev_E = None
+    converged = False
 
     for it in range(max_iter):
         # 计算源项 (右端项 $s_i = g_i \rho_i$ 及自耦合修正)
@@ -110,7 +112,7 @@ def compute_finite_nucleus(
         )
         # $\rho$ 场源: $s_\rho = g_\rho [ n_3 - \Lambda_\omega g_\rho \rho_{03} (g_\omega \omega)^2 ]$
         s_rho = g_r * (
-            n_30
+            -n_30
             - Lw * (g_r * rho03) * (g_w * omega) ** 2 / fm_MeV ** 4  # $\Lambda_\omega g_\rho \rho_{03} (g_\omega \omega)^2$
         )
         # $\delta$ 场源: $s_\delta = g_\delta n_{3s}$ (无自耦合)
@@ -137,13 +139,15 @@ def compute_finite_nucleus(
         delta_f = alpha * delta_new + (1 - alpha) * delta_f
         A0 = alpha * A0_new + (1 - alpha) * A0
 
-        # 更新密度 (保持 Woods-Saxon 形状但更新归一化)
-        dens0 = initial_densities(r, A, Z, N, R)
-        n_v0 = dens0["n_v"]
-        n_s0 = dens0["n_s"]
-        n_30 = dens0["n_3"]
-        n_3s0 = dens0["n_3s"]
-        n_gamma0 = dens0["n_gamma"]
+        # 求解单粒子 Dirac 方程，并由占据轨道更新密度。
+        densities, orbitals = solve_dirac_densities(
+            r, dr, sigma, omega, rho03, delta_f, A0, Z, N, params
+        )
+        n_v0 = densities["n_v"]
+        n_s0 = densities["n_s"]
+        n_30 = densities["n_3"]
+        n_3s0 = densities["n_3s"]
+        n_gamma0 = densities["n_gamma"]
 
         # 计算能量
         ens = compute_binding_energy(
@@ -152,6 +156,7 @@ def compute_finite_nucleus(
         E_total = ens["E_total"]
 
         if prev_E is not None and abs(E_total - prev_E) < conv_tol:
+            converged = True
             print(
                 f"  Converged after {it + 1} iterations "
                 f"(ΔE = {abs(E_total - prev_E):.2e} MeV)"
@@ -186,12 +191,13 @@ def compute_finite_nucleus(
         "n_3": n_30,
         "n_3s": n_3s0,
         "n_gamma": n_gamma0,
+        "orbitals": orbitals,
         "E_total": E_total,
         "E_per_nucleon": ens["E_per_nucleon"],  # $E_{tot}/A$
         "r_n": math.sqrt(max(r_n_sq, 0.0)),  # $\sqrt{\langle r_n^2 \rangle}$
         "r_p": math.sqrt(max(r_p_sq, 0.0)),  # $\sqrt{\langle r_p^2 \rangle}$
         "r_charge": math.sqrt(max(r_p_sq, 0.0) + 0.8 ** 2),  # $\sqrt{\langle r_p^2 \rangle + 0.8^2}$ (加入质子电荷半径)
-        "converged": prev_E is not None and abs(E_total - prev_E) < conv_tol,
+        "converged": converged,
     }
 
 

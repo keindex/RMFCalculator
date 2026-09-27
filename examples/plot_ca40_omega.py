@@ -15,7 +15,7 @@ from RMFCalculator.eos.finite_nucleus.params import FSU_DELTA67_FN
 from RMFCalculator.eos.finite_nucleus.solver import compute_finite_nucleus
 
 
-result = compute_finite_nucleus(Z=20, N=28, params=FSU_DELTA67_FN)
+result = compute_finite_nucleus(Z=20, N=28, params=FSU_DELTA67_FN,max_iter=500, conv_tol=1e-3)
 
 fields = [
     ("sigma", r"$\sigma(r)$", "#1769aa"),
